@@ -333,6 +333,8 @@ a:hover{text-decoration:underline}
     <div class="row">
       <div><span class="score-big" id="rScore">0</span><span class="muted"> / 100</span><div id="rVerdict"></div></div>
       <span style="flex:1"></span>
+    <button class="btn primary sm" id="exportBtn">📋 复制成绩明细（给 AI 分析）</button>
+    <button class="btn ghost sm" id="exportDl">⬇ 下载 JSON</button>
       <button class="btn" id="againBtn">再考一次</button>
     </div>
     <div id="rBreak"></div>
@@ -583,7 +585,22 @@ function submitExam(timeout){clearInterval(EX.iv);
    <div style="margin-top:6px">${lines}</div>
    <div style="font-size:14px;margin-top:4px">你的选择：<b>${userStr}</b>${q.t==='tf'?' ｜ 正确答案：<b>'+(q.ans[0]?'False':'True')+'</b>':''}</div>
    <div class="expl">${q.ex}</div></div>`}).join('');
- const hist=store.get('exam',[]);hist.push({s:score,b:label});store.set('exam',hist.slice(-20));renderStats();window.scrollTo(0,0)}
+ const hist=store.get('exam',[]);hist.push({s:score,b:label});store.set('exam',hist.slice(-20));
+ /* __EXPORT__ 保存本次逐题明细，供导出分析 */
+ try{
+   var zd={};review.forEach(function(r){var k=useTopic?topicOf(r.q):zoneOf(r.q);zd[k]=zd[k]||{right:0,total:0};zd[k].total++;if(r.ok)zd[k].right++;});
+   window.__lastReview={ts:Date.now(),label:label,score:score,pass:passLine,timeout:!!timeout,
+     topics:zd,
+     items:review.map(function(r){
+       var q=r.q;
+       return {n:r.i+1,type:q.t,zone:q.z,topic:useTopic?topicOf(q):zoneOf(q),ok:r.ok,
+         en:(q.en||'').slice(0,200),zh:(q.zh||'').slice(0,120),
+         yourAns:r.user,correctAns:(q.ans||[]).slice(),
+         ex:(q.ex||'').slice(0,300)};
+     })};
+   store.set('lastreview',window.__lastReview);
+ }catch(e){}
+ renderStats();window.scrollTo(0,0)}
 $('#againBtn').onclick=()=>{$('#examResult').style.display='none';$('#examHome').style.display='';renderStats()};
 
 /* ================= 词汇下钻页 ================= */
@@ -1347,6 +1364,68 @@ document.addEventListener('keydown',function(e){
     b.addEventListener('click',function(){try{renderSprint()}catch(e){}});
   });
   try{renderSprint()}catch(e){}
+})();
+
+/* __EXPORT__ 成绩导出：可复制文本（直接粘给 AI）+ 下载 JSON */
+(function(){
+  function summary(){
+    var d=window.__lastReview||store.get('lastreview',null);
+    if(!d)return null;
+    var L=['【LLM-ACA 模考成绩单】',
+      '卷型: '+d.label+' ｜ 得分: '+d.score+'/100 ｜ 及格线: '+d.pass+' ｜ '+(d.score>=d.pass?'✅ 达标':'❌ 未达标')+(d.timeout?'（超时交卷）':''),
+      '时间: '+new Date(d.ts).toLocaleString('zh-CN'),
+      '',
+      '— 七主题得分 —'];
+    var order=window.__TOPIC_ORDER||[];
+    var keys=Object.keys(d.topics||{}).sort(function(a,b){var ia=order.indexOf(a),ib=order.indexOf(b);if(ia<0)ia=99;if(ib<0)ib=99;return ia-ib});
+    keys.forEach(function(k){
+      var t=d.topics[k],rate=t.total?t.right/t.total:0;
+      var full=t.total*2,got=t.right*2;
+      L.push('  '+k+': '+got+'/'+full+' ('+Math.round(rate*100)+'%)'+(rate<0.7?' ⚠️ 需重点补':''));
+    });
+    L.push('','— 错题明细（'+d.items.filter(function(i){return !i.ok}).length+' 题）—');
+    d.items.filter(function(i){return !i.ok}).forEach(function(i){
+      var L2='ABCDEFGH';
+      L.push('Q'+i.n+' ['+i.topic+'] '+i.type);
+      L.push('  题干: '+i.en);
+      L.push('  你选: '+i.yourAns.map(function(v){return i.type==='tf'?(v?'False':'True'):L2[v]}).join('、')+
+             ' ｜ 正确: '+i.correctAns.map(function(v){return i.type==='tf'?(v?'False':'True'):L2[v]}).join('、'));
+      if(i.ex)L.push('  解析: '+i.ex);
+      L.push('');
+    });
+    return L.join('\n');
+  }
+  var b=document.getElementById('exportBtn');
+  if(b)b.onclick=function(){
+    var s=summary();
+    if(!s){alert('暂无成绩数据。请先完成一次模考。');return}
+    // 优先用剪贴板 API，失败则退回 textarea+execCommand
+    function fallback(){
+      var ta=document.createElement('textarea');ta.value=s;
+      ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);
+      ta.select();var ok=false;try{ok=document.execCommand('copy')}catch(e){}
+      document.body.removeChild(ta);
+      if(ok)alert('✅ 已复制！直接粘贴给 AI 即可。');
+      else{ // 最后兜底：弹窗让他手动复制
+        var w=window.open('','_blank');
+        if(w){w.document.write('<pre style="white-space:pre-wrap;font:13px monospace;padding:16px">'+s.replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c]})+'</pre>')}
+        else alert('复制失败，请用「下载 JSON」按钮。');
+      }
+    }
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(s).then(function(){alert('✅ 已复制！直接粘贴给 AI 即可。')},fallback);
+    } else fallback();
+  };
+  var dl=document.getElementById('exportDl');
+  if(dl)dl.onclick=function(){
+    var d=window.__lastReview||store.get('lastreview',null);
+    if(!d){alert('暂无成绩数据。请先完成一次模考。');return}
+    var blob=new Blob([JSON.stringify(d,null,1)],{type:'application/json'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='llmaca-exam-'+new Date(d.ts).toISOString().slice(0,10)+'-'+d.score+'分.json';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+  };
 })();
 </script>
 </body>
