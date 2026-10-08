@@ -61,6 +61,9 @@ table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
 th,td{border-bottom:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
 th{background:var(--bg);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-secondary);position:sticky;top:56px;z-index:1}
 tr:hover td{background:var(--accent-light)}
+/* __P0_TABLE__ 表格横向滚动容器（移动端防裁切） */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:8px 0}
+.tw>table{margin:0;min-width:0}
 
 /* ===== Buttons ===== */
 .btn{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;border:0;border-radius:var(--radius-sm);padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;transition:var(--transition);gap:6px}
@@ -170,6 +173,12 @@ a:hover{text-decoration:underline}
   #csdn .btn.ghost{flex:1 1 calc(50% - 8px)}
   table{font-size:13px}
   th,td{padding:6px 8px}
+  /* __P0_TABLE__ 移动端：允许长内容换行，尽量免横滚 */
+  table{table-layout:auto}
+  th,td{white-space:normal;word-break:break-word;overflow-wrap:anywhere}
+  .tw{margin:6px 0}
+  /* 题库/课程页长表格：保持可读的最小列宽，超出则横滚 */
+  #csdn table,.tw>table{min-width:0}
   .opt{font-size:14px;padding:10px 12px}
   .timer{font-size:20px}
   .score-big{font-size:34px}
@@ -286,6 +295,7 @@ a:hover{text-decoration:underline}
 </section>
 
 <section id="exam">
+  <div class="card" id="examResume" style="display:none;border-color:var(--accent)"><div class="row" style="margin:0"></div></div>
   <div class="card" id="examHome">
     <h2>🏁 全真模考 · 50 题（默认卷 L：60 分钟 / 及格 80）</h2>
     <p><b>卷 L（推荐·对应你考的证）</b>：35 单选 + 15 多选，无判断题，60 分钟，及格 <b>80</b>——EXAM3/4 真题 41 题必抽、题池补足并乱序。<br>🧪 <b>卷 L+ 实验题</b>：在卷 L 基础上追加 10 道官方动手实验题（来自课程 001/002/003），共 60 题 / 70 分钟 / 及格 80。<br>🔀 <b>卷 L·原题＋变体混抽</b>：41 个必考考点各有"原题"与"同考点改写版"两份，每份考卷随机各抽一版，可反复刷而不背答案。<br><b>卷 A / 卷 B / 🎲随机</b>为另一张证（GenAI：90 分钟 / 及格 70 / 含判断）风格交叉练习卷。答题时题干与选项均为纯英文（仿真考场）；交卷后逐题给出<b>题干+全部选项+解析</b>的完整中文对照。多选题必须<b>完全选对</b>才得分。</p>
@@ -398,10 +408,12 @@ a:hover{text-decoration:underline}
 <section id="wrong">
   <div class="card">
     <div class="row"><h2 style="margin:0">📕 错题本</h2><span style="flex:1"></span>
+      <button class="btn sm" id="wRedoAll">🔁 重练全部错题</button>
       <button class="btn ghost sm" id="wReset">清空错题本</button></div>
     <p class="muted">各单元（精练 / 模考 / 阅读 / 国内题库）答错的题会自动记入此处，按单元分组。点"重练"跳回原单元。</p>
     <div id="wStats" class="row"></div>
     <div id="wBox"></div>
+    <div id="wRedo" style="margin-top:14px"></div>
   </div>
 </section>
 
@@ -510,9 +522,10 @@ function buildBankFor(mode){let pool;
 function buildBank(){const mode=$('#exBank').value;return buildBankFor(mode)}
 function startExam(){if(EX&&EX.iv)clearInterval(EX.iv);
  const{pool,label,dur,pass}=buildBank();EX={qs:pool,label,dur,pass,i:0,ans:pool.map(()=>new Set()),flags:new Set(),t:dur};
+ if(window.__examSave)window.__examSave();
  $('#examHome').style.display='none';$('#examResult').style.display='none';$('#examRun').style.display='';
  $('#tClock').textContent=String(Math.floor(EX.dur/60)).padStart(2,'0')+':00';$('#tClock').style.color='var(--accent)';
- clearInterval(EX.iv);EX.iv=setInterval(()=>{if(!EX)return;EX.t--;const m=String(Math.floor(EX.t/60)).padStart(2,'0'),s=String(EX.t%60).padStart(2,'0');
+ clearInterval(EX.iv);EX.iv=setInterval(()=>{if(!EX)return;EX.t--;if(EX.t%5===0&&window.__examSave)window.__examSave();const m=String(Math.floor(EX.t/60)).padStart(2,'0'),s=String(EX.t%60).padStart(2,'0');
   $('#tClock').textContent=`${m}:${s}`;if(EX.t<=300)$('#tClock').style.color='var(--bad)';if(EX.t<=0){clearInterval(EX.iv);submitExam(true)}},1000);
  renderQ();renderPal()}
 function renderQ(){const q=EX.qs[EX.i];const sel=EX.ans[EX.i];const N=EX.qs.length;
@@ -524,7 +537,7 @@ function renderQ(){const q=EX.qs[EX.i];const sel=EX.ans[EX.i];const N=EX.qs.leng
  $('#tPos').textContent=`第 ${EX.i+1} / ${N} 题 · ${({single:'单选',multi:'多选',tf:'判断'})[q.t]}`;
  $('#tFlag').textContent=EX.flags.has(EX.i)?'🚩 取消标记':'🚩 标记本题';
  $('#tBar').style.width=((EX.i+1)/N*100)+'%';
- const n=EX.ans.reduce((a,s)=>a+(s.size?1:0),0);$('#tAnswered').textContent=`已作答 ${n} / ${N}`;renderPal()}
+ const n=EX.ans.reduce((a,s)=>a+(s.size?1:0),0);$('#tAnswered').textContent=`已作答 ${n} / ${N}`;renderPal();if(window.__examSave)window.__examSave()}
 function renderPal(){$('#tPalette').innerHTML=EX.qs.map((q,i)=>`<div class="dot ${EX.ans[i].size?'sel':''} ${EX.flags.has(i)?'flag':''}" data-i="${i}">${i+1}</div>`).join('');
  $$('#tPalette .dot').forEach(d=>d.onclick=()=>{EX.i=+d.dataset.i;renderQ()})}
 $('#startExam').onclick=startExam;
@@ -540,7 +553,7 @@ function submitExam(timeout){clearInterval(EX.iv);
   if(ok)score+=2;else if(window.__wrongAdd)window.__wrongAdd('exam',q);review.push({q,i,ok,user});});
  const useTopic=!!EX.pass&&EX.pass===80;
  const z={};review.forEach(r=>{const k=useTopic?topicOf(r.q):zoneOf(r.q);z[k]=z[k]||[0,0];z[k][1]++;if(r.ok)z[k][0]++});
- const label=EX.label,passLine=EX.pass;EX=null;
+ const label=EX.label,passLine=EX.pass;EX=null;if(window.__examClear)window.__examClear();
  $('#examRun').style.display='none';$('#examResult').style.display='';
  $('#rScore').textContent=score;$('#rScore').className='score-big '+(score>=passLine?'pass':'fail');
  $('#rVerdict').innerHTML=`【${label}】`+(score>=passLine?`<b class="pass"> ✅ 达到通过线（${passLine}）</b>`:`<b class="fail"> ❌ 未达 ${passLine} 分</b>`)+(timeout?'（超时自动交卷）':'');
@@ -892,7 +905,8 @@ document.addEventListener('keydown',function(e){
       const nav=document.querySelector('[data-t="'+UNITID[u]+'"]');if(nav)nav.click();
       // 精练/模考无搜索框：提示用户；题库有搜索框可直接跳
       if(u==='bank'&&window.bankJump)setTimeout(()=>window.bankJump(k),100);
-      else setTimeout(()=>alert('已跳到「'+UNITNAME[u]+'」。本单元无搜索框，请按题干回忆重做：\n\n'+k+'…'),120);
+      else if(window.__wrongRedo)setTimeout(()=>window.__wrongRedo(),100);
+      else setTimeout(()=>alert('已跳到「'+UNITNAME[u]+'」：\n\n'+k+'…'),120);
     });
     box.querySelectorAll('[data-wdel]').forEach(b=>b.onclick=()=>{remove(b.dataset.wu,b.dataset.wk)});
   }
@@ -906,8 +920,246 @@ document.addEventListener('keydown',function(e){
   if(typeof _show==='function'){
     window.showTab=function(t){const r=_show.apply(this,arguments);if(t==='wrong')try{render()}catch(e){}return r};
   }
+  window.__wrongRender=render;
   document.querySelectorAll('[data-t="wrong"]').forEach(b=>b.addEventListener('click',()=>{try{render()}catch(e){}}));
   try{render()}catch(e){}
+})();
+
+/* __P0_TABLE__ 为表格套横向滚动容器（幂等；覆盖静态与动态生成的表） */
+(function(){
+  function wrap(){
+    var tbs=document.querySelectorAll('table');
+    for(var i=0;i<tbs.length;i++){
+      var t=tbs[i],p=t.parentNode;
+      if(p&&p.classList&&p.classList.contains('tw'))continue; // 已包裹
+      var w=document.createElement('div');w.className='tw';
+      try{p.insertBefore(w,t);w.appendChild(t);}catch(e){}
+    }
+  }
+  wrap();
+  // 动态区域（词汇表/模考成绩/题库）渲染后重新包裹
+  if(window.MutationObserver){
+    var mo=new MutationObserver(function(){try{wrap()}catch(e){}});
+    ['vocabList','rBreak','csdnBox','examResult'].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el)try{mo.observe(el,{childList:true,subtree:true})}catch(e){}
+    });
+  }
+})();
+
+/* __P1_EXAM__ 模考状态持久化（刷新/标签页回收后可恢复） */
+(function(){
+  var KEY='exam_live';
+  function pack(){
+    if(!EX)return null;
+    return {qs:EX.qs,label:EX.label,dur:EX.dur,pass:EX.pass,i:EX.i,
+      ans:EX.ans.map(function(s){return [...s]}),
+      flags:[...EX.flags],t:EX.t,savedAt:Date.now()};
+  }
+  function save(){
+    try{var d=pack();if(d)sessionStorage.setItem(KEY,JSON.stringify(d))}catch(e){}
+  }
+  function clear(){try{sessionStorage.removeItem(KEY)}catch(e){}}
+  function load(){
+    try{var s=sessionStorage.getItem(KEY);if(!s)return null;var d=JSON.parse(s);
+      if(!d||!d.qs||!d.qs.length)return null;return d}catch(e){return null}
+  }
+  window.__examSave=save;window.__examClear=clear;
+
+  // 恢复入口：显示提示条，由用户点"继续"
+  function offerResume(){
+    var d=load();if(!d)return;
+    var bar=document.getElementById('examResume');
+    if(!bar)return;
+    var n=d.ans.reduce(function(a,s){return a+(s&&s.length?1:0)},0);
+    var min=Math.floor(d.t/60),sec=d.t%60;
+    var age=Math.round((Date.now()-(d.savedAt||0))/60000);
+    bar.style.display='';
+    bar.innerHTML='<span style="flex:1">💾 检测到未完成的考试：<b>'+d.label+'</b> · 已答 <b>'+n+' / '+d.qs.length+
+      '</b> · 剩余 <b>'+min+':'+String(sec).padStart(2,'0')+'</b>'+(age>0?' · '+age+' 分钟前保存':'')+'</span>'+
+      '<button class="btn sm" id="examResumeGo">继续考试</button>'+
+      '<button class="btn ghost sm" id="examResumeDrop">放弃</button>';
+    document.getElementById('examResumeGo').onclick=function(){
+      try{
+        EX={qs:d.qs,label:d.label,dur:d.dur,pass:d.pass,i:d.i||0,
+            ans:d.qs.map(function(_,i){return new Set((d.ans&&d.ans[i])||[])}),
+            flags:new Set(d.flags||[]),t:d.t};
+        document.getElementById('examHome').style.display='none';
+        document.getElementById('examResult').style.display='none';
+        document.getElementById('examRun').style.display='';
+        bar.style.display='none';
+        clearInterval(EX.iv);
+        EX.iv=setInterval(function(){if(!EX)return;EX.t--;if(EX.t%5===0)save();
+          var m=String(Math.floor(EX.t/60)).padStart(2,'0'),s=String(EX.t%60).padStart(2,'0');
+          document.getElementById('tClock').textContent=m+':'+s;
+          if(EX.t<=300)document.getElementById('tClock').style.color='var(--bad)';
+          if(EX.t<=0){clearInterval(EX.iv);submitExam(true)}},1000);
+        renderQ();renderPal();
+      }catch(e){alert('恢复失败：'+e.message)}
+    };
+    document.getElementById('examResumeDrop').onclick=function(){
+      if(confirm('放弃这份未完成的考试？已答内容将丢失。')){clear();bar.style.display='none'}
+    };
+  }
+  // 页面加载后提示（等主脚本初始化完成）
+  setTimeout(function(){try{offerResume()}catch(e){}},150);
+  // 离开页面前兜底保存
+  window.addEventListener('beforeunload',function(){try{save()}catch(e){}});
+})();
+
+/* __P2_REDO__ 错题重练（反查题库组卷 + 答对自动销账） */
+(function(){
+  var LETTERS='ABCDEFGH';
+  function norm(s){return String(s==null?'':s).replace(/\s+/g,' ').trim()}
+  function keyOf(q){return norm(q&&(q.en||q.s||q.zh)).slice(0,20)}
+
+  // 反查表：key -> {unit, q}（后面的不覆盖前面的，保持写入端优先）
+  function buildIndex(){
+    var idx={};
+    function put(unit,q){
+      var k=keyOf(q); if(!k||idx[k])return;
+      idx[k]={unit:unit,q:q};
+    }
+    try{(typeof PRACTICE!=='undefined'?PRACTICE:[]).forEach(function(q){put('practice',q)})}catch(e){}
+    ['EXAM','EXAM2','EXAM3','EXAM4','EXAM3V','EXAM4V','LABS'].forEach(function(nm){
+      try{var a=eval(nm);if(Array.isArray(a))a.forEach(function(q){put('exam',q)})}catch(e){}
+    });
+    try{PASSAGES.forEach(function(p){(p.quiz||[]).forEach(function(q){put('read',q)})})}catch(e){}
+    try{CSDN.forEach(function(q){put('bank',q)})}catch(e){}
+    try{CSDN2.forEach(function(q){put('bank',q)})}catch(e){}
+    return idx;
+  }
+
+  function wrongList(){
+    var v=store.get('wrongbook',[]);return Array.isArray(v)?v:[];
+  }
+  function dropOne(unit,key){
+    store.set('wrongbook',wrongList().filter(function(x){return !(x.unit===unit&&x.key===key)}));
+  }
+
+  var RD=null; // 当前重练会话
+
+  function startRedo(){
+    var v=wrongList();
+    if(!v.length){alert('错题本是空的，先去练习吧。');return}
+    var idx=buildIndex();
+    var qs=[],miss=[];
+    v.forEach(function(x){
+      var hit=idx[x.key];
+      if(hit)qs.push({unit:x.unit,key:x.key,q:hit.q});
+      else miss.push(x);
+    });
+    if(!qs.length){
+      alert('错题本里有 '+v.length+' 条记录，但都未能反查到原题（可能是旧版记录或题干已变）。\n建议先"清空错题本"重新积累。');
+      return;
+    }
+    RD={items:qs,right:0,wrong:0,miss:miss.length};
+    renderRedo();
+    var el=document.getElementById('wRedo');
+    if(el&&el.scrollIntoView)try{el.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}
+  }
+
+  function renderRedo(){
+    var box=document.getElementById('wRedo');if(!box||!RD)return;
+    if(RD.done){
+      box.innerHTML='<div class="card" style="margin:0;border-color:var(--ok)"><h3 style="margin:0 0 6px">🎉 重练完成</h3>'+
+        '<p style="margin:0">答对 <b style="color:var(--ok)">'+RD.right+'</b> 题（已自动移出错题本）· 答错 <b style="color:var(--bad)">'+RD.wrong+'</b> 题（保留待再练）'+
+        (RD.miss?' · '+RD.miss+' 条未能反查':'')+'</p>'+
+        '<div class="row" style="margin-top:10px"><button class="btn sm" id="wRedoAgain">再来一轮</button>'+
+        '<button class="btn ghost sm" id="wRedoClose">关闭</button></div></div>';
+      var a=document.getElementById('wRedoAgain'),c=document.getElementById('wRedoClose');
+      if(a)a.onclick=function(){RD=null;startRedo()};
+      if(c)c.onclick=function(){RD=null;box.innerHTML='';
+        // 刷新列表（销账后同步）
+        var nb=document.getElementById('wBox');
+        if(nb&&window.__wrongRender)try{window.__wrongRender()}catch(e){}};
+      return;
+    }
+    var done=RD.items.filter(function(x){return x.result}).length;
+    box.innerHTML='<div class="card" style="margin:0;border-color:var(--accent)">'+
+      '<div class="row" style="margin:0 0 10px"><h3 style="margin:0">🔁 错题重练</h3>'+
+      '<span class="tag">'+done+' / '+RD.items.length+'</span><span style="flex:1"></span>'+
+      '<button class="btn ghost sm" id="wRedoStop">结束重练</button></div>'+
+      RD.items.map(function(it,i){
+        var q=it.q,multi=q.t==='multi'||(q.a&&q.a.length>1);
+        var opts=q.opts||q.o||[];
+        var optsZh=q.optsZh||null;
+        var stem=q.en||q.s||q.zh||'';
+        var zh=q.zh||'';
+        var h2='<div class="card" data-rd="'+i+'" style="margin:10px 0;background:var(--bg)">'+
+          '<div class="muted">#'+(i+1)+' · '+(multi?'多选':'单选')+' · '+({practice:'精练',exam:'模考',read:'阅读',bank:'题库'}[it.unit]||it.unit)+'</div>'+
+          '<div style="font-size:15.5px;margin:4px 0">'+(q.en?q.en:stem)+'</div>'+
+          (q.en&&zh?'<div class="enline" style="color:var(--muted);font-size:13.5px">'+zh+'</div>':'')+
+          '<div class="rd-opts">'+opts.map(function(o,j){
+            var lab=q.a?(q.a[j]||LETTERS[j]):LETTERS[j];
+            return '<button class="opt" data-v="'+j+'"><b>'+lab+'.</b> '+o+'</button>';
+          }).join('')+'</div>'+
+          '<div class="row" style="margin-top:8px"><button class="btn sm" data-act="chk">检查答案</button>'+
+          '<span class="expl" hidden></span></div></div>';
+        return h2;
+      }).join('')+'</div>';
+    bindRedo();
+  }
+
+  // 正确索引：统一成数字数组
+  function ansIdx(q,opts){
+    if(q.ans&&Array.isArray(q.ans))return q.ans.slice();
+    if(q.a&&Array.isArray(q.a)){ // 字母答案
+      return q.a.map(function(L){return LETTERS.indexOf(String(L).toUpperCase())}).filter(function(n){return n>=0});
+    }
+    return [];
+  }
+
+  function bindRedo(){
+    var box=document.getElementById('wRedo');if(!box)return;
+    var stop=document.getElementById('wRedoStop');
+    if(stop)stop.onclick=function(){RD=null;box.innerHTML='';var nb=document.getElementById('wBox');if(nb&&window.__wrongRender)try{window.__wrongRender()}catch(e){}};
+    box.querySelectorAll('[data-rd]').forEach(function(card){
+      var i=+card.dataset.rd,it=RD.items[i],q=it.q;
+      var opts=q.opts||q.o||[],correct=ansIdx(q,opts);
+      var chosen=new Set();
+      card.querySelectorAll('.opt').forEach(function(b){
+        b.onclick=function(){
+          if(card.dataset.checked)return;
+          var v=+b.dataset.v;
+          if(q.t==='multi'||(q.a&&q.a.length>1)){
+            chosen.has(v)?chosen.delete(v):chosen.add(v);b.classList.toggle('sel');
+          }else{
+            chosen.clear();chosen.add(v);
+            card.querySelectorAll('.opt').forEach(function(x){x.classList.remove('sel')});b.classList.add('sel');
+          }
+        };
+      });
+      var ck=card.querySelector('[data-act=chk]');
+      if(ck)ck.onclick=function(){
+        if(card.dataset.checked)return;card.dataset.checked=1;
+        var ok=correct.length===chosen.size&&correct.every(function(v){return chosen.has(v)});
+        card.querySelectorAll('.opt').forEach(function(b){
+          var v=+b.dataset.v;
+          if(correct.indexOf(v)>=0)b.classList.add('right');
+          else if(chosen.has(v))b.classList.add('wrong');
+        });
+        var e=card.querySelector('.expl');e.hidden=false;
+        e.innerHTML=(ok?'✅ 正确！已从错题本移除。':'❌ 正确答案：'+correct.map(function(n){return opts[n]?LETTERS[n]:n}).join('、')+'（仍保留在错题本）');
+        it.result=ok?'right':'wrong';
+        if(ok){RD.right++;dropOne(it.unit,it.key);}
+        else RD.wrong++;
+        // 全部完成 → 结算
+        if(RD.items.every(function(x){return x.result})){RD.done=true;setTimeout(function(){renderRedo();
+          /* 结算后同步刷新错题列表与统计：销账了计数要立刻变 */
+          if(window.__wrongRender)try{window.__wrongRender()}catch(e){}},400)}
+        else{
+          var tag=box.querySelector('.card .tag');
+          if(tag)tag.textContent=RD.items.filter(function(x){return x.result}).length+' / '+RD.items.length;
+        }
+      };
+    });
+  }
+
+  var btn=document.getElementById('wRedoAll');
+  if(btn)btn.onclick=startRedo;
+  // 暴露给 A4 的渲染器，用于重练后刷新列表
+  window.__wrongRedo=startRedo;
 })();
 </script>
 </body>
