@@ -199,6 +199,7 @@ a:hover{text-decoration:underline}
     <button data-t="course">📘 官方课程精读</button>
     <button data-t="checklist">📝 考前清单</button>
     <button data-t="wrong">📕 错题本</button>
+    <button data-t="sprint">📅 冲刺计划</button>
   </nav>
 <button class="theme-toggle" id="themeBtn" title="切换深色模式">🌙</button>
 </header>
@@ -409,11 +410,23 @@ a:hover{text-decoration:underline}
   <div class="card">
     <div class="row"><h2 style="margin:0">📕 错题本</h2><span style="flex:1"></span>
       <button class="btn sm" id="wRedoAll">🔁 重练全部错题</button>
+      <button class="btn ghost sm" id="wGroup">🔀 切换分组</button>
       <button class="btn ghost sm" id="wReset">清空错题本</button></div>
-    <p class="muted">各单元（精练 / 模考 / 阅读 / 国内题库）答错的题会自动记入此处，按单元分组。点"重练"跳回原单元。</p>
+    <p class="muted">各单元答错的题自动记入此处。<b>默认按考纲七主题分组</b>（弱项一眼可见），点「🔀 切换分组」可切回按单元视角。点「🔁 重练全部错题」可集中消灭错题，答对自动划掉。</p>
     <div id="wStats" class="row"></div>
     <div id="wBox"></div>
     <div id="wRedo" style="margin-top:14px"></div>
+  </div>
+</section>
+
+<section id="sprint">
+  <div class="card">
+    <div class="row"><h2 style="margin:0">📅 冲刺计划 · 10/20 考试</h2><span style="flex:1"></span>
+      <b id="spCount" class="tag">—</b>
+      <button class="btn ghost sm" id="spReset">重置进度</button></div>
+    <div class="bar"><i id="spBar" style="width:0%"></i></div>
+    <p class="muted" id="spHint">每日打勾即自动保存（localStorage）。计划按考纲七主题权重排布，每天 6–8 小时。</p>
+    <div id="spBox"></div>
   </div>
 </section>
 
@@ -696,7 +709,7 @@ window.__csdnLazy={warm:function(){if(!BATCH_ON)return;BATCH_ON=false;renderFast
    (out?`<div style="margin-top:6px;font-size:12.5px;color:var(--bad)">ℹ️ 此题超出 LLM Engineer (Associate) 考纲（${x.scopeNote||'实现细节类'}），了解即可，不必掌握。</div>`:'')+
    `<div class="muted" style="margin-top:6px">${multi?'点选全部正确项':'选择答案'}后点"检查"</div>
     <button class="btn sm" data-act="chk">检查答案</button><div class="expl" hidden></div>`;
-  if($('#cStudy').checked){const e=c.querySelector('.expl');e.hidden=false;e.innerHTML='✅ 答案：'+x.a.join('、')+(out?'（超纲题）':'（社区题，无官方解析）');
+  if($('#cStudy').checked){const e=c.querySelector('.expl');e.hidden=false;e.innerHTML='✅ 答案：'+x.a.join('、')+(out?'（超纲题）':'（社区题，无官方解析）')+(window.__topicBadge?window.__topicBadge(x):'');
    c.querySelectorAll('.opt').forEach(bp=>{if(x.a.includes(bp.dataset.v))bp.classList.add('right')});c.dataset.checked=1}
   const chosen=new Set();
   c.querySelectorAll('.opt').forEach(bp=>bp.onclick=()=>{if(c.dataset.checked)return;const v=bp.dataset.v;
@@ -706,7 +719,9 @@ window.__csdnLazy={warm:function(){if(!BATCH_ON)return;BATCH_ON=false;renderFast
    const ok=chosen.size===x.a.length&&[...chosen].every(v=>x.a.includes(v));
    if(ok){ok2++;}else{c.querySelectorAll('.opt').forEach(bp=>{if(chosen.has(bp.dataset.v)&&!x.a.includes(bp.dataset.v))bp.classList.add('wrong')});if(window.__wrongAdd)window.__wrongAdd('bank',x);}
    c.querySelectorAll('.opt').forEach(bp=>{if(x.a.includes(bp.dataset.v))bp.classList.add('right')});
-   const e=c.querySelector('.expl');e.hidden=false;e.innerHTML=(ok?'✅ 正确！':'❌ 正确答案：'+x.a.join('、'))+(ok?'':'（社区题无解析，存疑以考纲为准）');
+   const e=c.querySelector('.expl');e.hidden=false;
+  var tip=(window.__topicBadge?window.__topicBadge(x):'');
+  e.innerHTML=(ok?'✅ 正确！':'❌ 正确答案：'+x.a.join('、'))+(ok?'':'（社区题无解析，存疑以考纲为准）')+tip;
    $('#cScore').textContent=`已检查 ${done} 题 · 正确 ${ok2}（正确率 ${Math.round(ok2/done*100)}%）`;
    $('#cBar').style.width=(done/ALL.length*100)+'%';};
   return c}
@@ -822,7 +837,7 @@ document.addEventListener('keydown',function(e){
 });
 /* __DEEP_LINK__ v3 */
 (function(){
-  var TABS=['home','vocab','tips','practice','exam','read','csdn','course','checklist','wrong'];
+  var TABS=['home','vocab','tips','practice','exam','read','csdn','course','checklist','wrong','sprint'];
   function showTab(t){
     if(TABS.indexOf(t)<0)t='home';
     $$('nav button').forEach(function(x){x.classList.toggle('on',x.dataset.t===t)});
@@ -880,15 +895,36 @@ document.addEventListener('keydown',function(e){
     const by={};v.forEach(x=>by[x.unit]=(by[x.unit]||0)+1);
     // 首页进度卡也顺带显示总量（元素可能不存在，容错）
     const box=document.getElementById('wStats');if(!box)return;
+    // 统计：按七主题（更贴近考纲权重，弱项一眼可见）
+    var tb={};
+    v.forEach(function(x){var t=(window.__topicOfKey?window.__topicOfKey(x.key):'未分类');tb[t]=(tb[t]||0)+1});
+    var ORDER=window.__TOPIC_ORDER||[];
+    var W={};try{W=window.__TOPIC_WEIGHT||{}}catch(e){}
     box.innerHTML='<span class="tag">错题总数 <b>'+v.length+'</b></span>'
+      +ORDER.filter(function(t){return tb[t]}).map(function(t){
+        return '<span class="tag">'+t+(W[t]?' <span class="muted">'+W[t]+'%</span>':'')+' <b>'+tb[t]+'</b></span>'
+      }).join('')
       +Object.keys(UNITNAME).map(u=>'<span class="tag">'+UNITNAME[u]+' <b>'+(by[u]||0)+'</b></span>').join('');
   }
   function render(){
     const box=document.getElementById('wBox');if(!box)return;
     const v=load();renderStats();
     if(!v.length){box.innerHTML='<p class="muted" style="margin-top:14px">🎉 暂无错题。各单元答错的题会自动出现在这里。</p>';return}
-    const groups={};v.forEach(x=>{(groups[x.unit]=groups[x.unit]||[]).push(x)});
-    box.innerHTML=Object.keys(groups).map(u=>{
+    // 分组：默认按七主题；?unit 时按单元（保留原视角）
+    var BYTOPIC=(typeof window.__wrongGroupBy==='undefined')?(store.get('wgroup','topic')!=='unit'):(window.__wrongGroupBy!=='unit');
+    var W=window.__TOPIC_WEIGHT||{};   // render() 内也用，须在此处声明（曾因作用域踩坑）
+    const groups={};
+    v.forEach(x=>{
+      var g=BYTOPIC?(window.__topicOfKey?window.__topicOfKey(x.key):'未分类'):x.unit;
+      (groups[g]=groups[g]||[]).push(x);
+    });
+    // 主题按考纲权重排序，未分类垫底
+    var ORD=(window.__TOPIC_ORDER||[]).concat(['未分类']);
+    var gkeys=Object.keys(groups).sort(function(a,b){
+      var ia=ORD.indexOf(a),ib=ORD.indexOf(b);
+      if(ia<0)ia=99;if(ib<0)ib=99;return ia-ib;
+    });
+    box.innerHTML=gkeys.map(u=>{
       const rows=groups[u].sort((a,b)=>b.ts-a.ts).map(x=>
         '<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0">'
         +'<span style="flex:1;font-size:13.5px">'+esc(x.key)+'…'
@@ -897,7 +933,8 @@ document.addEventListener('keydown',function(e){
         +'<button class="btn ghost sm" data-wgo="'+u+'" data-wk="'+esc(x.key)+'">重练</button>'
         +'<button class="btn ghost sm" data-wdel="1" data-wu="'+u+'" data-wk="'+esc(x.key)+'">移除</button>'
         +'</div>').join('');
-      return '<h3 style="margin:16px 0 4px">'+UNITNAME[u]+' <span class="muted">('+groups[u].length+')</span></h3>'+rows;
+      var title=BYTOPIC?(u+(W[u]?' <span class="tag">考纲 '+W[u]+'%</span>':'')):(UNITNAME[u]||u);
+      return '<h3 style="margin:16px 0 4px">'+title+' <span class="muted">('+groups[u].length+')</span></h3>'+rows;
     }).join('');
     // 事件：重练 → 切到原单元并把错题关键字塞进搜索/直接跳到该题
     box.querySelectorAll('[data-wgo]').forEach(b=>b.onclick=()=>{
@@ -921,6 +958,13 @@ document.addEventListener('keydown',function(e){
     window.showTab=function(t){const r=_show.apply(this,arguments);if(t==='wrong')try{render()}catch(e){}return r};
   }
   window.__wrongRender=render;
+  // 分组视角切换：topic（默认，按考纲七主题）↔ unit（按练习单元）
+  var gb=document.getElementById('wGroup');
+  if(gb)gb.onclick=function(){
+    var cur=store.get('wgroup','topic');
+    store.set('wgroup',cur==='topic'?'unit':'topic');
+    try{render()}catch(e){}
+  };
   document.querySelectorAll('[data-t="wrong"]').forEach(b=>b.addEventListener('click',()=>{try{render()}catch(e){}}));
   try{render()}catch(e){}
 })();
@@ -1160,6 +1204,149 @@ document.addEventListener('keydown',function(e){
   if(btn)btn.onclick=startRedo;
   // 暴露给 A4 的渲染器，用于重练后刷新列表
   window.__wrongRedo=startRedo;
+})();
+
+/* __SPRINT__ 冲刺计划 + 错题按主题分组 + 考点提示 */
+(function(){
+  var RULES=[["安全合规",["security","compliance","privacy","audit","filing","injection","rbac","mask","gdpr","pipl","hipaa","ccpa","anonym","regulat","ethic","responsible","jailbreak","moderation","guardrail","leak","risk","安全","合规","隐私","审计","备案","注入","脱敏","匿名","监管","伦理","越狱","审核","泄露","风险","敏感","responsible ai"]],["Agent",["agent","multi-agent","planning","tool call","tool-call","react ","workflow","autonomous","orchestrat","智能体","规划","工具调用","自主","工作流","编排"]],["多模态",["multimodal","multi-modal","vision","speech","image","audio","video","qwen-vl","asr","tts","ocr","chart","wanx","wan(","voice","多模态","视觉","语音","图像","音频","视频","图表","音色"]],["微调",["fine-tune","finetune","fine tune","lora","peft","sft","rlhf","annotation","label","dataset","distill","quantiz","training data","微调","标注","数据集","蒸馏","量化","训练数据","预训练数据"]],["Prompt 工程",["prompt","few-shot","zero-shot","chain","cot","temperature","top_p","role play","system prompt","instruction","output format","json","提示词","提示工程","少样本","思维链","温度","角色","输出格式"]],["API·插件·RAG",["rag","retrieval","vector","knowledge base","rerank","recall","chunk","embedding","plugin","batch","streaming","api","endpoint","model studio","dashscope","sdk","api key","apikey","bill","quota","rate limit","knowledgebase","segment","检索","向量","知识库","重排","召回","分块","嵌入","插件","批量","流式","接口","百炼","计费","限流","切片"]],["LLM 概念",["llm","token","tokeniz","context","transformer","attention","encoder","decoder","pre-train","pretrain","inference","emergent","foundation model","moe","parameter","hallucinat","benchmark","分词","上下文","注意力","预训练","推理","涌现","基础模型","混合专家","参数","幻觉","评测","生成式"]]];
+  var TOPIC_ORDER=["Prompt 工程","API·插件·RAG","LLM 概念","Agent","微调","安全合规","多模态"];
+  var TOPIC_WEIGHT={"Prompt 工程":20,"API·插件·RAG":20,"LLM 概念":18,"Agent":14,"微调":12,"安全合规":10,"多模态":6};
+
+  function topicOf(q){
+    if(!q)return 'LLM 概念';
+    var tags=(q.g||[]).map(function(t){return String(t).toLowerCase()});
+    var text=(tags.join(' ')+' '+(q.s||'')+' '+(q.en||'')+' '+(q.kp||'')).toLowerCase();
+    for(var i=0;i<RULES.length;i++){
+      var kws=RULES[i][1];
+      for(var j=0;j<kws.length;j++){if(text.indexOf(kws[j])>=0)return RULES[i][0]}
+    }
+    return q.z==='i'?'API·插件·RAG':'LLM 概念';
+  }
+  window.__topicOf=topicOf;
+  window.__TOPIC_ORDER=TOPIC_ORDER;
+
+  /* ---------- 计划数据 ---------- */
+  var PLAN=[
+    {d:'10/08',wd:'四',topic:'摸底 + 概念',exam:'Prompt 20 / API 20 / 概念 18',en:'D区27词背完',ops:['跑一次卷L 全真模考（60′）拿基线分','读讲1 Understanding LLMs','记下：得分 / 剩余时间 / 错题主题']},
+    {d:'10/09',wd:'五',topic:'LLM 概念（18%）',exam:'讲1 + 讲11',en:'E区18词',ops:['精读讲1 + 讲11 决策树','词汇 A区46词 自测','题库 z=b 全刷（80题）','错题复盘销账']},
+    {d:'10/10',wd:'六',topic:'Prompt（20%）',exam:'讲3',en:'D区复习+题干句型',ops:['精读讲3 Prompt优化','题干技巧：NOT/most likely/Select three','卷L Prompt类11题精做','计时模考一次']},
+    {d:'10/11',wd:'日',topic:'Prompt（20%）',exam:'讲3 复读',en:'A区复习',ops:['精练15题','卷A 计时','错题复盘销账','英文泛读 CSDN2']},
+    {d:'10/12',wd:'一',topic:'API·自动化（20%）',exam:'讲4',en:'C区47词',ops:['精读讲4 API自动化','Batch/流式/计费 类题','词汇 C区 自测','计时模考']},
+    {d:'10/13',wd:'二',topic:'插件（20%）',exam:'讲5',en:'C区复习',ops:['精读讲5 插件机制','插件类题全做','🔀 卷L原题变体混抽 计时','错题复盘']},
+    {d:'10/14',wd:'三',topic:'RAG（20%）',exam:'讲6',en:'B区前40词',ops:['精读讲6 RAG','RAG三板斧：查询改写/多路/重排','题库 RAG类（241题中挑）','计时模考']},
+    {d:'10/15',wd:'四',topic:'Agent（14%）',exam:'讲7',en:'F区15词',ops:['精读讲7 Agent','规划/记忆/工具调用 三件套','卷L Agent类9题','错题复盘']},
+    {d:'10/16',wd:'五',topic:'微调（12%）',exam:'讲8',en:'B区后33词',ops:['精读讲8 微调','LoRA/PEFT/数据质量','题库 微调类99题','计时模考']},
+    {d:'10/17',wd:'六',topic:'安全合规（10%）',exam:'讲9',en:'G区22词',ops:['精读讲9 安全合规','审计日志七要素 / 备案义务','题库 安全类47题','错题复盘']},
+    {d:'10/18',wd:'日',topic:'多模态（6%）+实验',exam:'讲10、12–14',en:'G区复习',ops:['精读讲10 多模态','🧪 卷L+ 实验题（60题/70′）','讲12–14 动手实验','错题复盘']},
+    {d:'10/19',wd:'一',topic:'全科串讲 + 错题清零',exam:'讲2、讲11',en:'全248词过一遍',ops:['讲11 决策树 通读','🔁 错题本重练：全部刷到全对','讲2 应用场景','不开新内容']},
+    {d:'10/20',wd:'二',topic:'🎯 考试日',exam:'—',en:'只看速查表',ops:['📝 考前清单逐项确认','轻度复习错题本','保持平常心，先易后难']}
+  ];
+
+  var KEY='sprint_done';
+  function loadDone(){var v=store.get(KEY,{});return (v&&typeof v==='object')?v:{}}
+  function saveDone(v){store.set(KEY,v)}
+  function todayIdx(){
+    var now=new Date(),m=now.getMonth()+1,d=now.getDate();
+    var s=(m<10?'0':'')+m+'/'+(d<10?'0':'')+d;
+    for(var i=0;i<PLAN.length;i++)if(PLAN[i].d===s)return i;
+    return -1;
+  }
+  function renderSprint(){
+    var box=document.getElementById('spBox');if(!box)return;
+    var done=loadDone();
+    var ti=todayIdx();
+    var total=0,doneN=0;
+    PLAN.forEach(function(_,i){for(var k=0;k<PLAN[i].ops.length;k++){total++;if(done[i+'-'+k])doneN++}});
+    // 顶部
+    var cd=document.getElementById('spCount');
+    if(cd){
+      var left=Math.round((new Date('2026-10-20T00:00:00')-new Date())/86400000);
+      cd.textContent=(left>=0?'距考试 '+left+' 天':'考试日已过')+' · 完成 '+doneN+'/'+total;
+    }
+    var bar=document.getElementById('spBar');
+    if(bar)bar.style.width=(total?doneN/total*100:0)+'%';
+    // 列表
+    box.innerHTML=PLAN.map(function(day,i){
+      var isToday=(i===ti);
+      var dayDone=0;PLAN[i].ops.forEach(function(_,k){if(done[i+'-'+k])dayDone++});
+      var allDone=dayDone===PLAN[i].ops.length;
+      return '<div class="card" style="margin:10px 0;'+(isToday?'border-color:var(--accent);background:var(--accent-light)':'')+'">'+
+        '<div class="row" style="margin:0 0 6px">'+
+        (isToday?'<span class="tag">今天</span>':'')+
+        '<b>Day '+(i+1)+' · '+day.d+'('+day.wd+')</b>'+
+        '<span style="flex:1"></span>'+
+        '<span class="tag">'+dayDone+'/'+PLAN[i].ops.length+'</span>'+
+        (allDone?'<span class="tag" style="background:var(--ok);color:#fff">✓ 完成</span>':'')+
+        '</div>'+
+        '<div style="font-size:14.5px;margin-bottom:4px"><b>'+day.topic+'</b></div>'+
+        '<div class="muted" style="font-size:12.5px;margin-bottom:6px">📘 '+day.exam+' ｜ 🔤 '+day.en+'</div>'+
+        PLAN[i].ops.map(function(op,k){
+          var ck=done[i+'-'+k]?'checked':'';
+          var st=done[i+'-'+k]?'style="text-decoration:line-through;color:var(--muted)"':'';
+          return '<label style="display:flex;gap:8px;align-items:flex-start;padding:3px 0;font-size:14px;cursor:pointer">'+
+            '<input type="checkbox" data-sp="'+i+'-'+k+'" '+ck+' style="margin-top:4px">'+
+            '<span '+st+'>'+op+'</span></label>';
+        }).join('')+
+        '</div>';
+    }).join('');
+    // 绑定
+    box.querySelectorAll('[data-sp]').forEach(function(cb){
+      cb.onchange=function(){
+        var d=loadDone();
+        if(cb.checked)d[cb.dataset.sp]=1;else delete d[cb.dataset.sp];
+        saveDone(d);renderSprint();
+      };
+    });
+  }
+  var rst=document.getElementById('spReset');
+  if(rst)rst.onclick=function(){if(confirm('重置全部打勾进度？')){saveDone({});renderSprint()}};
+
+  /* ---------- 错题本按七主题分组（接管 A4 的 render 展示层） ---------- */
+  function topicStats(list){
+    var m={};list.forEach(function(x){var t=x.topic||'未分类';m[t]=(m[t]||0)+1});
+    return m;
+  }
+  // 反查题干关键词 → 主题：错题只存了 key（题干前20字），用全库匹配
+  function buildTopicIndex(){
+    var idx={};
+    function put(q){
+      var s=(q&&(q.en||q.s||q.zh))||'';var k=String(s).replace(/\s+/g,' ').trim().slice(0,20);
+      if(k&&!idx[k])idx[k]=topicOf(q);
+    }
+    try{PRACTICE.forEach(put)}catch(e){}
+    ['EXAM','EXAM2','EXAM3','EXAM4','EXAM3V','EXAM4V','LABS'].forEach(function(n){
+      try{var a=eval(n);if(Array.isArray(a))a.forEach(put)}catch(e){}
+    });
+    try{PASSAGES.forEach(function(p){(p.quiz||[]).forEach(put)})}catch(e){}
+    try{CSDN.forEach(put)}catch(e){}
+    try{CSDN2.forEach(put)}catch(e){}
+    return idx;
+  }
+  var _ti=null;
+  window.__topicOfKey=function(key){
+    if(!_ti)_ti=buildTopicIndex();
+    return _ti[key]||'未分类';
+  };
+
+  /* ---------- 无解析题补考点提示 ---------- */
+  // 在题库卡片里，若该题无 kp 解析，则显示其知识点标签 + 主题归属
+  window.__topicBadge=function(q){
+    var t=topicOf(q);
+    var tags=(q.g||[]).slice(0,4).join(' · ');
+    if(q.kp&&q.kp.trim())return '';
+    return '<div style="margin-top:6px;font-size:12.5px;color:var(--accent)">💡 考点：<b>'+t+'</b>'+
+      (tags?' ｜ 关键词：'+tags:'')+'<span class="muted"> （社区题无官方解析，按此方向自查）</span></div>';
+  };
+
+  // 深链刷新
+  var _st=window.showTab;
+  if(typeof _st==='function'){
+    window.showTab=function(t){var r=_st.apply(this,arguments);if(t==='sprint')try{renderSprint()}catch(e){}return r};
+  }
+  document.querySelectorAll('[data-t="sprint"]').forEach(function(b){
+    b.addEventListener('click',function(){try{renderSprint()}catch(e){}});
+  });
+  try{renderSprint()}catch(e){}
 })();
 </script>
 </body>
