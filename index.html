@@ -255,6 +255,31 @@ a:hover{text-decoration:underline}
 #mmGrid.hl-only .pt:not(.hl){display:none}
 #mmGrid.only-topics .lcbox,#mmGrid.only-topics .ptbox{display:none}
 #mmGrid.only-topics{grid-template-columns:160px 1fr}
+/* __FEISHU__ 飞书文档式排版 */
+.fb-tabs{display:flex;gap:2px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:2px;margin-right:10px}
+.fb-tab{border:0;background:transparent;color:var(--text-secondary);font-size:12.5px;padding:5px 12px;
+  border-radius:7px;cursor:pointer;font-family:inherit;transition:all .12s}
+.fb-tab:hover{color:var(--accent)}
+.fb-tab.on{background:var(--card);color:var(--accent);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.fb-doc{margin-top:6px}
+.fb-doc .read{font-size:14.5px;line-height:1.95;color:var(--text-secondary)}
+.fb-h1{font-size:17px;font-weight:700;color:var(--text);margin:26px 0 10px;
+  padding-bottom:6px;border-bottom:2px solid var(--line)}
+.fb-h1:first-child{margin-top:4px}
+.fb-h2{font-size:15px;font-weight:700;color:var(--accent-dark);margin:20px 0 8px}
+.fb-lab{font-size:12.5px;font-weight:700;color:var(--muted);margin:14px 0 6px;letter-spacing:.4px}
+.fb-note{margin:10px 0;padding:9px 13px;background:var(--accent-light);border-left:3px solid var(--accent);
+  border-radius:0 7px 7px 0;font-size:14px;line-height:1.8;color:var(--text-secondary)}
+.fb-doc .read p{margin:0 0 14px 0}
+.fb-ul{margin:0 0 14px 0;padding-left:22px}
+.fb-ul li{font-size:14.5px;line-height:1.9;margin:5px 0;color:var(--text-secondary)}
+.zh-p{margin:0 0 14px 0;font-size:14px;line-height:1.95;color:var(--text-secondary)}
+#fbZh .fb-h1,#fbZh .fb-h2{color:var(--text)}
+.fb-bi{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.fb-bi-col{min-width:0}
+.fb-bi-zh{border-left:2px solid var(--line);padding-left:26px}
+@media(max-width:1000px){.fb-bi{grid-template-columns:1fr;gap:10px}
+  .fb-bi-zh{border-left:0;padding-left:0;border-top:2px solid var(--line);padding-top:14px}}
 </style>
 </head>
 <body>
@@ -965,97 +990,74 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
   if(L.traps&&L.traps.length)h+='<h3>⚠️ 易错点</h3><ul style="margin:6px 0 0;padding-left:22px;color:var(--bad)">'+L.traps.map(k=>'<li style="margin:4px 0;font-size:14px">'+k+'</li>').join('')+'</ul>';
   h+='<div style="margin-top:14px"><button class="btn ghost sm" onclick="bankJump(\''+(L.bankQ||'')+'\')">🔎 练一练：本讲主题在题库中检索</button></div></div>';
   const g0=$('#crGloss');const show=g0?g0.checked:true;
-  /* __LAYOUT3__ 按小节合并正文块（翻译框跟块走，不再逐段碎片化） */
-  let body='';const zhArr=L.parasZh||[];
-  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const zhBlock=(list)=>{const zt=list.filter(Boolean).map(z=>esc(z)).join('<br>');return zt?'<details style="margin:6px 0 16px"><summary style="cursor:pointer;font-size:12px;color:#5b9cf6">🀄 中文翻译</summary><div style="font-size:13.5px;line-height:1.8;color:#8fa3b8;margin-top:6px">'+zt+'</div></details>':''};
-
-  const MAXCHARS=350;                 // 单个正文块的英文上限
-  let pBuf=[],zBuf=[],pLen=0;         // 当前累积的正文块
-  let ulBuf=[],ulZh=[],pendZh=[];     // 当前列表 + 待挂译文
-
+  /* __FEISHU__ 飞书式排版：原文与译文分离 */
+  let body='';
+  let zhBody='';
+  const zhArr2=L.parasZh||[];
+  const esc2=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const zhP=t=>{const s=String(t||'').trim();return s?'<p class="zh-p">'+esc2(s)+'</p>':''};
+  const MAXC=350;
+  let pBuf=[],pLen=0,zhPending=[],ulBuf=[],ulZh=[];
   const flushP=()=>{if(!pBuf.length)return;
-    body+='<p>'+pBuf.map((seg,k)=>k?(' '+seg.replace(/^<i>/,'')):seg).join('')+'</p>'+zhBlock([zBuf.filter(Boolean).join(' ')]);
-    pBuf=[];zBuf=[];pLen=0};
-  const flushUL=()=>{if(!ulBuf.length){pendZh=[];return}
-    body+='<ul class="c-ul">'+ulBuf.map(t=>'<li>'+t+'</li>').join('')+'</ul>'+zhBlock(ulZh.concat(pendZh));
-    ulBuf=[];ulZh=[];pendZh=[]};
+    body+='<p>'+pBuf.join(' ')+'</p>';
+    zhPending.forEach(z=>{if(z)zhBody+=zhP(z)});
+    pBuf=[];pLen=0;zhPending=[]};
+  const flushUL=()=>{if(!ulBuf.length)return;
+    body+='<ul class="fb-ul">'+ulBuf.map(t=>'<li>'+t+'</li>').join('')+'</ul>';
+    ulZh.forEach(z=>{if(z)zhBody+=zhP(z)});
+    ulBuf=[];ulZh=[]};
   const flushAll=()=>{flushP();flushUL()};
-
   const addP=(txt,zh)=>{
     const t=String(txt);
-    // 超长单段 → 按内嵌标记/句子先切分，再逐块累积
-    if(t.length>MAXCHARS){
+    if(t.length>MAXC){
       const segs=splitLong(t);
-      if(segs.length>1){
-        segs.forEach((sg,k)=>addP(sg,k===segs.length-1?zh:''));
-        return;
-      }
+      if(segs.length>1){segs.forEach((sg,k)=>addP(sg,k===segs.length-1?zh:''));return}
     }
-    const hh=show?gloss(esc(t)):esc(t);
-    if(pLen&&pLen+hh.length>MAXCHARS)flushP();
-    pBuf.push(hh);zBuf.push(zh||'');pLen+=hh.length;
+    const hh=show?gloss(esc2(t)):esc2(t);
+    if(pLen&&pLen+hh.length>MAXC)flushP();
+    pBuf.push(hh);pLen+=hh.length;zhPending.push(zh||'');
   };
 
   L.paras.forEach((p,pi)=>{
-   const raw=String(p);const cls=isHead2(raw);const z=zhArr[pi]||'';
+   const raw=String(p);const cls=isHead2(raw);const z=zhArr2[pi]||'';
    if(cls.k==='empty')return;
-
-   // —— 标题：落盘后输出；译文并入紧随块，不单独挂框
    if(cls.k==='h'){
      flushAll();
      const lv=cls.lv||2;
-     body+= lv===1 ? '<h5 class="c-ch">'+esc(cls.t)+'</h5>' : '<h6 class="c-sec">'+esc(cls.t)+'</h6>';
-     if(cls.splitRest)addP(cls.splitRest,z);else if(z)body+=zhBlock([z]);
+     const tg=lv===1?'h3':'h4';
+     body+='<'+tg+' class="fb-h'+(lv===1?'1':'2')+'">'+esc2(cls.t)+'</'+tg+'>';
+     if(cls.splitRest)addP(cls.splitRest,z);else if(z)zhBody+=zhP(z);
      return;
    }
-   if(cls.k==='label'){flushAll();body+='<div class="c-lab">'+esc(cls.t)+'</div>';if(cls.splitRest)addP(cls.splitRest,z);else if(z)body+=zhBlock([z]);return}
-   if(cls.k==='note'){flushAll();body+='<div class="c-note">'+esc(cls.t)+'</div>';if(z)body+=zhBlock([z]);return}
-
-   // —— 列表段
-   if(cls.k==='bullets'||(raw.match(/[•▪‣●]/g)||[]).length>=2){
+   if(cls.k==='label'){flushAll();body+='<div class="fb-lab">'+esc2(cls.t)+'</div>';if(cls.splitRest)addP(cls.splitRest,z);else if(z)zhBody+=zhP(z);return}
+   if(cls.k==='note'){flushAll();body+='<div class="fb-note">'+esc2(cls.t)+'</div>';if(z)zhBody+=zhP(z);return}
+   if(cls.k==='bullets'||(raw.match(/[\u2022\u25aa\u2023\u25cf]/g)||[]).length>=2){
      flushP();
-     const items=splitBullets(raw);
-     const rest=[];
-    items.forEach((it)=>{
-       // 形如 "短标签 后面是完整句子" → 拆出标签与正文
-       let label=it, tail='';
+     const items=splitBullets(raw);const rest=[];
+     items.forEach(function(it){
+       let label=it,tail='';
        const m2=it.match(/^(.{2,42}?)\s+(?=(?:These|This|They|It|The|Such|Models?|DL|LLMs?)\b)/);
-       if(m2&&m2[1].length<=42&&it.length-m2[1].length>40){
-         label=m2[1].trim(); tail=it.slice(m2[1].length).trim();
-       } else {
-         const sents=it.split(/(?<=[.!?。])\s+(?=[A-Z])/);
-         if(sents.length>1&&sents[0].length<120){
-           label=sents[0]; tail=sents.slice(1).join(' ').trim();
-         }
-       }
-       ulBuf.push(show?gloss(esc(label)):esc(label));
+       if(m2&&m2[1].length<=42&&it.length-m2[1].length>40){label=m2[1].trim();tail=it.slice(m2[1].length).trim()}
+       else{const se2=it.split(/(?<=[.!?\u3002])\s+(?=[A-Z])/);if(se2.length>1&&se2[0].length<120){label=se2[0];tail=se2.slice(1).join(' ').trim()}}
+       ulBuf.push(show?gloss(esc2(label)):esc2(label));
        if(tail)rest.push(tail);
      });
-     // 整个列表只挂一个译文框
      if(z)ulZh.push(z);
-     // bullet 里被还原的正文，合并进正文块
      if(rest.length)rest.forEach((r,k)=>addP(r,k===rest.length-1?z:''));
      return;
    }
-
-   // —— 内嵌选择题
    const choice=splitChoice(raw);
    if(choice){
      flushAll();
-     const stem=choice[0];
-     if(stem)body+='<p>'+(show?gloss(esc(stem)):esc(stem))+'</p>'+zhBlock([z]);
-     body+='<ul class="c-ul">'+choice.slice(1).map(op=>'<li>'+(show?gloss(esc(op)):esc(op))+'</li>').join('')+'</ul>';
+     body+='<p>'+(show?gloss(esc2(choice[0])):esc2(choice[0]))+'</p>';
+     if(z)zhBody+=zhP(z);
+     body+='<ul class="fb-ul">'+choice.slice(1).map(op=>'<li>'+(show?gloss(esc2(op)):esc2(op))+'</li>').join('')+'</ul>';
      return;
    }
-
-   // —— 普通正文：先切掉段首粘连的小节标签
    flushUL();
    let body2=raw,labHead='';
-   // (a) "XXX XXX ..." 重复词（PDF 抽取把标题与正文粘一起）
    const dup=body2.match(/^([A-Z][A-Za-z ]{2,28}?)\s+\1/);
    if(dup){labHead=dup[1].trim();body2=body2.slice(labHead.length).trim()}
-   // (b) 段落中部的标签词（Generative AI / Summary / Note 等）→ 拆为独立小节
    const LBL='(?:Generative AI|Summary|Note|Tip|Key Characteristics|Classification)';
    const mid=body2.match(new RegExp('^(.*?)\\s+'+LBL+'\\s+(?=[A-Z]|With )'));
    if(mid&&mid[1].length>0){
@@ -1064,16 +1066,37 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
      const lab=body2.match(new RegExp('^'+LBL));
      if(lab){labHead=lab[0];body2=body2.slice(lab[0].length).trim()}
    } else {
-     // 段首即标签："Summary With this foundation..."
      const head=body2.match(new RegExp('^'+LBL+'\\s+(?=[A-Z]|With )'));
      if(head){labHead=head[0].trim();body2=body2.slice(head[0].length).trim()}
    }
-   if(labHead){flushP();body+='<h6 class="c-sec">'+esc(labHead)+'</h6>'}
+   if(labHead){flushP();body+='<h4 class="fb-h2">'+esc2(labHead)+'</h4>'}
    addP(body2,z);
   });
-  flushAll();h+='<div class="card"><div class="row"><h3 style="margin:0">📜 课程原文（蓝色下划线=专业术语，点击开下钻页；灰色括注可开关）</h3><span style="flex:1"></span><label class="switch"><input type="checkbox" id="crGloss" '+(show?'checked':'')+'>术语标注</label></div><div class="read" style="font-size:14.5px;line-height:1.95">'+body+'</div></div>';
+  flushAll();
+h+='<div class="card"><div class="row" style="margin-bottom:10px">'+
+    '<h3 style="margin:0">📜 课程原文</h3><span style="flex:1"></span>'+
+    '<div class="fb-tabs"><button class="fb-tab on" data-view="en">📄 原文</button>'+
+    '<button class="fb-tab" data-view="zh">🌐 译文</button>'+
+    '<button class="fb-tab" data-view="bi">📑 对照</button></div>'+
+    '<label class="switch"><input type="checkbox" id="crGloss" '+(show?'checked':'')+'>术语标注</label></div>'+
+    '<div class="fb-doc" id="fbEn"><div class="read">'+body+'</div></div>'+
+    '<div class="fb-doc" id="fbZh" style="display:none"><div class="read">'+zhBody+'</div></div>'+
+    '<div class="fb-doc" id="fbBi" style="display:none">'+
+      '<div class="fb-bi"><div class="fb-bi-col"><div class="read">'+body+'</div></div>'+
+      '<div class="fb-bi-col fb-bi-zh"><div class="read">'+zhBody+'</div></div></div></div>'+
+    '</div>';
   $('#courseContent').innerHTML=h;
-  const g=$('#crGloss');if(g)g.onchange=render;}
+  var _g2=$('#crGloss');if(_g2)_g2.onchange=render;
+  $$('#courseContent .fb-tab').forEach(function(b){
+    b.onclick=function(){
+      $$('#courseContent .fb-tab').forEach(function(x){x.classList.toggle('on',x===b)});
+      var v=b.dataset.view;
+      $('#fbEn').style.display=(v==='en')?'':'none';
+      $('#fbZh').style.display=(v==='zh')?'':'none';
+      $('#fbBi').style.display=(v==='bi')?'':'none';
+    };
+  });
+}
  $('#courseNav').innerHTML=COURSE2.map((c,i)=>'<option value="'+i+'">'+(i+1)+'. '+c.title.replace(/_/g,' ')+'</option>').join('');
  $('#courseNav').onchange=render;render();})();
 
