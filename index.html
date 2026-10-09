@@ -798,8 +798,12 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
   if(short&&labWords.test(s)){
     const rest=s.replace(labWords,'').replace(/^[\s:：•·]+/,'').trim();
     if(!rest)return{k:'label',t:s};
+    const lab=s.slice(0,s.length-rest.length).trim();
+    // 纯列举型（Keywords）→ 标签 + 正文；叙述型 → 小节标题
+    if(/^(Keywords?|References?|Appendix)\s*[:：]?$/i.test(lab))
+      return{k:'label',t:lab.replace(/[:：]$/,''),splitRest:rest};
     if(rest.length<=56)return{k:'h',lv:2,t:s};
-    return{k:'h',lv:2,t:s.slice(0,s.length-rest.length).trim()||s.slice(0,30),splitRest:rest};
+    return{k:'h',lv:2,t:lab||s.slice(0,30),splitRest:rest};
   }
   // [Background] / [Sample] / 【示例】等方括号块标记
   if(short&&/^[\[【(（][^\]】)）]{1,24}[\]】)）]\s*[:：]?\s*$/.test(s))return{k:'h',lv:3,t:s};
@@ -860,88 +864,90 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
   if(L.traps&&L.traps.length)h+='<h3>⚠️ 易错点</h3><ul style="margin:6px 0 0;padding-left:22px;color:var(--bad)">'+L.traps.map(k=>'<li style="margin:4px 0;font-size:14px">'+k+'</li>').join('')+'</ul>';
   h+='<div style="margin-top:14px"><button class="btn ghost sm" onclick="bankJump(\''+(L.bankQ||'')+'\')">🔎 练一练：本讲主题在题库中检索</button></div></div>';
   const g0=$('#crGloss');const show=g0?g0.checked:true;
-  /* __LAYOUT__ 结构化渲染：按块类型分别输出，列表/提示不再堆成大段 */
-  let body='',buf=[],bufZh=[];const zhArr=L.parasZh||[];
+  /* __LAYOUT3__ 按小节合并正文块（翻译框跟块走，不再逐段碎片化） */
+  let body='';const zhArr=L.parasZh||[];
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const zhBlock=(list)=>{const zt=list.filter(Boolean).map(z=>esc(z)).join('<br>');return zt?'<details style="margin:2px 0 14px"><summary style="cursor:pointer;font-size:12px;color:#5b9cf6">🀄 中文翻译</summary><div style="font-size:13.5px;line-height:1.8;color:#8fa3b8;margin-top:6px">'+zt+'</div></details>':''};
-  // __LAYOUT__ 关键修复：每个源段独立成 <p>，不再 join 成巨型段落
-  const flushP=()=>{if(!buf.length)return;
-    buf.forEach((seg,i)=>{
-      const z=zhArr && bufZh[i] ? [bufZh[i]] : [];
-      // 该段若是 A-D 选项 → 归入列表
-      if(/^[A-D][\.、\)]\s/.test(seg.replace(/<[^>]+>/g,''))){
-        ulBuf.push(seg);ulZh.push(z[0]||'');
-      } else {
-        body+='<p>'+seg+'</p>'+zhBlock(z);
+  const zhBlock=(list)=>{const zt=list.filter(Boolean).map(z=>esc(z)).join('<br>');return zt?'<details style="margin:6px 0 16px"><summary style="cursor:pointer;font-size:12px;color:#5b9cf6">🀄 中文翻译</summary><div style="font-size:13.5px;line-height:1.8;color:#8fa3b8;margin-top:6px">'+zt+'</div></details>':''};
+
+  const MAXCHARS=350;                 // 单个正文块的英文上限
+  let pBuf=[],zBuf=[],pLen=0;         // 当前累积的正文块
+  let ulBuf=[],ulZh=[],pendZh=[];     // 当前列表 + 待挂译文
+
+  const flushP=()=>{if(!pBuf.length)return;
+    body+='<p>'+pBuf.map((seg,k)=>k?(' '+seg.replace(/^<i>/,'')):seg).join('')+'</p>'+zhBlock([zBuf.filter(Boolean).join(' ')]);
+    pBuf=[];zBuf=[];pLen=0};
+  const flushUL=()=>{if(!ulBuf.length){pendZh=[];return}
+    body+='<ul class="c-ul">'+ulBuf.map(t=>'<li>'+t+'</li>').join('')+'</ul>'+zhBlock(ulZh.concat(pendZh));
+    ulBuf=[];ulZh=[];pendZh=[]};
+  const flushAll=()=>{flushP();flushUL()};
+
+  const addP=(txt,zh)=>{
+    const t=String(txt);
+    // 超长单段 → 按内嵌标记/句子先切分，再逐块累积
+    if(t.length>MAXCHARS){
+      const segs=splitLong(t);
+      if(segs.length>1){
+        segs.forEach((sg,k)=>addP(sg,k===segs.length-1?zh:''));
+        return;
       }
-    });
-    buf=[];bufZh=[]};
-  // 连续列表项合并为一个 <ul>
-  let ulBuf=[],ulZh=[];
-  const flushUL=()=>{if(!ulBuf.length)return;
-    body+='<ul class="c-ul">'+ulBuf.map(t=>'<li>'+t+'</li>').join('')+'</ul>'+zhBlock(ulZh);ulBuf=[];ulZh=[]};
+    }
+    const hh=show?gloss(esc(t)):esc(t);
+    if(pLen&&pLen+hh.length>MAXCHARS)flushP();
+    pBuf.push(hh);zBuf.push(zh||'');pLen+=hh.length;
+  };
 
   L.paras.forEach((p,pi)=>{
    const raw=String(p);const cls=isHead2(raw);const z=zhArr[pi]||'';
-   const pushText=(txt)=>{const hh=(show?gloss(esc(txt)):esc(txt));buf.push(hh);bufZh.push(z)};
    if(cls.k==='empty')return;
+
+   // —— 标题：落盘后输出；译文并入紧随块，不单独挂框
    if(cls.k==='h'){
-     flushP();flushUL();
+     flushAll();
      const lv=cls.lv||2;
      body+= lv===1 ? '<h5 class="c-ch">'+esc(cls.t)+'</h5>' : '<h6 class="c-sec">'+esc(cls.t)+'</h6>';
-     if(cls.splitRest){body+='<p>'+esc(cls.splitRest)+'</p>'}
-     if(z)body+=zhBlock([z]);
+     if(cls.splitRest)addP(cls.splitRest,z);else if(z)body+=zhBlock([z]);
      return;
    }
-   if(cls.k==='label'){flushP();flushUL();body+='<div class="c-lab">'+esc(cls.t)+'</div>';if(z)body+=zhBlock([z]);return}
-   if(cls.k==='note'){flushP();flushUL();body+='<div class="c-note">'+esc(cls.t)+'</div>';if(z)body+=zhBlock([z]);return}
-   if(cls.k==='bullets'){
+   if(cls.k==='label'){flushAll();body+='<div class="c-lab">'+esc(cls.t)+'</div>';if(cls.splitRest)addP(cls.splitRest,z);else if(z)body+=zhBlock([z]);return}
+   if(cls.k==='note'){flushAll();body+='<div class="c-note">'+esc(cls.t)+'</div>';if(z)body+=zhBlock([z]);return}
+
+   // —— 列表段
+   if(cls.k==='bullets'||(raw.match(/[•·▪‣●]/g)||[]).length>=2){
      flushP();
      const items=splitBullets(raw);
-     items.forEach(it=>{ulBuf.push(show?gloss(esc(it)):esc(it));ulZh.push('')});
-     // 中文按整段挂在该列表后
-     if(z)ulZh[ulZh.length-1]=z;
+     const rest=[];
+    items.forEach((it)=>{
+       const sents=it.split(/(?<=[.!?。])\s+(?=[A-Z])/);
+       if(sents.length>1&&sents[0].length<120){
+         ulBuf.push(show?gloss(esc(sents[0])):esc(sents[0]));
+         const r=sents.slice(1).join(' ').trim();
+         if(r)rest.push(r);
+       } else {
+         ulBuf.push(show?gloss(esc(it)):esc(it));
+       }
+     });
+     // 整个列表只挂一个译文框
+     if(z)ulZh.push(z);
+     // bullet 里被还原的正文，合并进正文块
+     if(rest.length)rest.forEach((r,k)=>addP(r,k===rest.length-1?z:''));
      return;
    }
-   // 正文：若内部含多个 • 则也拆列表
-   const inner=(raw.match(/[•·▪‣●]/g)||[]).length;
-   if(inner>=2){
-     flushP();
-     splitBullets(raw).forEach(it=>{ulBuf.push(show?gloss(esc(it)):esc(it));ulZh.push('')});
-     if(z)ulZh[ulZh.length-1]=z;
-     return;
-   }
-   flushUL();
-   // 内嵌选择题 → 题干 + 选项列表
+
+   // —— 内嵌选择题
    const choice=splitChoice(raw);
    if(choice){
+     flushAll();
      const stem=choice[0];
-     if(stem)pushText(stem);
-     flushP();
-     flushUL();
-     choice.slice(1).forEach(op=>{ulBuf.push(show?gloss(esc(op)):esc(op));ulZh.push('')});
-     const z2=z;if(z2){ulZh[ulZh.length-1]=z2;bufZh.push('')}
+     if(stem)body+='<p>'+(show?gloss(esc(stem)):esc(stem))+'</p>'+zhBlock([z]);
+     body+='<ul class="c-ul">'+choice.slice(1).map(op=>'<li>'+(show?gloss(esc(op)):esc(op))+'</li>').join('')+'</ul>';
      return;
    }
-   // 先按源文本粗拆
-   let parts=splitLong(raw);
-   // 再检查"渲染后（含中文括注）"是否仍过长 → 按句子细拆
-   const rendLen=(t)=>(show?gloss(esc(t)):esc(t)).length;
-   if(parts.length===1&&rendLen(raw)>520){
-     const sents=raw.split(/(?<=[.!?。！？])\s+/).map(x=>x.trim()).filter(Boolean);
-     if(sents.length>1){
-       const out=[];let cur='';
-       sents.forEach(sn=>{cur=cur?cur+' '+sn:sn;if(rendLen(cur)>=420){out.push(cur);cur=''}});
-       if(cur)out.push(cur);
-       parts=out.length>1?out:[raw];
-     }
-   }
-   if(parts.length>1){
-     parts.forEach((pt,k)=>{pushText(pt);if(k<parts.length-1){flushP()}});
-   } else pushText(raw);
+
+   // —— 普通正文：累加进当前块
+   flushUL();
+   addP(raw,z);
   });
-  flushP();flushUL();
-  h+='<div class="card"><div class="row"><h3 style="margin:0">📜 课程原文（蓝色下划线=专业术语，点击开下钻页；灰色括注可开关）</h3><span style="flex:1"></span><label class="switch"><input type="checkbox" id="crGloss" '+(show?'checked':'')+'>术语标注</label></div><div class="read" style="font-size:14.5px;line-height:1.95">'+body+'</div></div>';
+  flushAll();h+='<div class="card"><div class="row"><h3 style="margin:0">📜 课程原文（蓝色下划线=专业术语，点击开下钻页；灰色括注可开关）</h3><span style="flex:1"></span><label class="switch"><input type="checkbox" id="crGloss" '+(show?'checked':'')+'>术语标注</label></div><div class="read" style="font-size:14.5px;line-height:1.95">'+body+'</div></div>';
   $('#courseContent').innerHTML=h;
   const g=$('#crGloss');if(g)g.onchange=render;}
  $('#courseNav').innerHTML=COURSE2.map((c,i)=>'<option value="'+i+'">'+(i+1)+'. '+c.title.replace(/_/g,' ')+'</option>').join('');
