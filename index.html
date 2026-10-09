@@ -206,6 +206,15 @@ a:hover{text-decoration:underline}
 .tr-lt:hover{color:var(--accent);border-color:var(--accent)}
 .tr-ul{margin:0;padding-left:20px}
 .tr-ul li{font-size:13.5px;line-height:1.8;margin:2px 0;color:var(--text-secondary)}
+/* __TREE__ v2 口诀与高频标记 */
+.tr-meta{font-size:11.5px;color:var(--muted);margin-left:auto;white-space:nowrap}
+.tr-mn{margin:8px 0 12px;padding:9px 12px;background:linear-gradient(90deg,rgba(37,99,235,.09),rgba(37,99,235,.02));border-left:3px solid var(--accent);border-radius:7px;font-size:13.5px;line-height:1.8;color:var(--text-secondary)}
+.tr-mn b{color:var(--accent);margin-right:6px}
+.tr-tip{font-size:12.5px;color:var(--muted);margin:2px 0 6px;padding-left:10px;border-left:2px dashed var(--line)}
+.tr-ul li.tr-hl{color:var(--bad);font-weight:600}
+.tr-pin{font-size:11px;opacity:.9}
+/* 只看高频：隐藏非高频项 */
+#trBox.hl-only .tr-ul li:not(.tr-hl){display:none}
 </style>
 </head>
 <body>
@@ -459,6 +468,7 @@ a:hover{text-decoration:underline}
 <section id="tree">
   <div class="card">
     <div class="row"><h2 style="margin:0">🗺️ 知识框架总览</h2><span style="flex:1"></span>
+      <label class="switch"><input type="checkbox" id="trOnlyHL">只看高频考点</label>
       <label class="switch"><input type="checkbox" id="trFold" checked>默认折叠</label>
       <button class="btn ghost sm" id="trExpand">全部展开</button></div>
     <p class="muted">按<b>考纲七主题权重</b>组织的 14 讲知识树。括号内为考试权重；<b>📕 高频</b>标记为历年反复出现的考点。</p>
@@ -1655,49 +1665,53 @@ document.addEventListener('keydown',function(e){
 
 /* __OPTFIX2__ 母题选项手写均衡 */
 
-/* __TREE__ 知识框架树状图 */
+/* __TREE__ 知识框架树状图 v2（折叠 + 口诀 + 高频标记） */
 (function(){
-  var D={"TREE":[{"topic":"Prompt 工程","weight":20,"color":"#2563eb","note":"考纲最高权重区之一，与 API/RAG 并列 20%","lectures":[{"n":3,"title":"Improving Response Quality Through Prompt Optimization","items":["什么是提示工程（Prompt Engineering）","四技巧递进：Zero-shot 直接问 → Few-shot 给 2-5 例 → 指派角色 → 拆解复杂任务（CoT）","提示五要素：Objective 任务目标 / Context 上下文 / Output format 输出格式 / Role 角色 / Constraints 约束","CRISPE 框架与综合提示模板","批量生成：把处理方法写成模板，再用程序循环调用"]},{"n":2,"title":"Typical Application Scenarios of LLMs","items":["文本创作：影视脚本、营销文案","代码生成：自然语言转代码、IDE 集成（通义灵码）","问答 / 翻译 / 摘要","决策原则：start simple —— 提示能解决就不上 RAG，RAG 能解决就不微调"]}]},{"topic":"API · 插件 · RAG","weight":20,"color":"#7c3aed","note":"考纲最高权重区，三讲合并覆盖","lectures":[{"n":4,"title":"Automating Tasks with LLMs via API","items":["messages 三角色：system 人设规则 / user 提问 / assistant 历史回复","多轮对话靠回传历史消息实现","参数三件套：temperature（低确定高多样）、top_p（核采样）、seed（可复现）","流式输出 Streaming 与 Batch API 的适用边界","计费 = 输入 token + 输出 token"]},{"n":5,"title":"Enhancing LLM Capabilities Through Plugins","items":["LLM 三大天生缺陷：知识截止、不能精确计算、不能执行外部动作","插件 = 外挂能力，弥补上述缺陷","分工模型（必记）：模型不执行工具，只生成结构化调用请求，平台执行后回传结果","实例：计算器插件、搜索插件"]},{"n":6,"title":"Enhancing LLMs to Answer Unanswerable Questions via RAG","items":["RAG 核心：知识外置，不改权重；提问时检索相关段落塞进提示（开卷答题）","价值三连：减幻觉、知识可日更、私有数据隔离","两步流程：Step 1 建索引（分块→嵌入→向量库） / Step 2 检索并生成","四大改进策略：查询改写、多路查询、CRAG 纠正式检索、Self-RAG 自反思","评估三问：相关性 / 有证据支撑 / 完整回答","❌ 必错项：「RAG 更新了模型权重」"]}]},{"topic":"LLM 概念","weight":18,"color":"#0891b2","note":"全课基石，概念对子最爱考","lectures":[{"n":1,"title":"Understanding Large Language Models (LLMs)","items":["脉络：AI → 机器学习 ML → 深度学习 DL → 生成式 AI → LLM","三阶段训练（成长类比）：Pre-training 童年 → SFT 大学 → RLHF 职场","预训练模型只会续写、不懂指令（埃菲尔铁塔问出东方明珠 = 语法对语义错）","LLM 四大特征：规模大 / 强适应泛化 / 海量多样语料预训练 / 高算力需求","工作原理两阶段：分词映射（词级/子词级/字级）→ 自回归逐 token 生成","生成停止条件：EOS 结束符 或 达到 max tokens","生命周期：2021 斯坦福 Foundational Model → 2022.11 ChatGPT → 2023 国内百模 → Qwen 开源","base vs chat：base=续写模型，chat=指令对齐版"]}]},{"topic":"Agent","weight":14,"color":"#ea580c","note":"与聊天机器人的区别是必考点","lectures":[{"n":7,"title":"Empowering LLMs to Think, Decide, and Act with Agents","items":["定义四件套：Agent = LLM 大脑 + 规划 Planning + 记忆 Memory + 工具调用","与聊天机器人区别：Agent 能把目标落成自主多步行动","核心架构 ReAct：推理 Reason 与行动 Act 交替循环","Tree of Thoughts（ToT）：多分支探索 + 评估剪枝","多智能体：分工协作（如 MetaGPT / AgentScope）","应用：智能家居助手、多任务编排"]}]},{"topic":"微调","weight":12,"color":"#16a34a","note":"选型判据是考点核心","lectures":[{"n":8,"title":"Improving LLM Performance in Vertical Domains Through Fine-Tuning","items":["选型判据：缺「风格/格式/领域行为」→ 微调；缺「事实新鲜度」→ RAG","顺序原则：先用 prompt + RAG 到上限，再考虑微调","适用场景：格式与接口合规、低延迟生产系统","LoRA：只训练少量额外参数，大幅降低成本","Prompt Tuning：轻量方法，不动主干权重","数据质量清单：标注一致 / 覆盖目标领域 / 剔除噪声","实践流程与训练数据准备"]}]},{"topic":"安全合规","weight":10,"color":"#dc2626","note":"四风险 + 四措施，背诵型考点","lectures":[{"n":9,"title":"Security and Compliance in LLM Applications","items":["四大风险：Prompt Injection 提示注入 / Data Leakage 数据泄露 / Jailbreak 越狱 / Hallucination 幻觉","输入侧防御：视所有输入为不可信 + 提示词防火墙","输出侧防御：内容审核与过滤","数据隐私保护：不存储、不传输敏感数据（脱敏/匿名化）","访问控制与认证：RBAC 按角色授权","审计日志七要素：时间戳、匿名用户 ID、输入、输出、模型版本、所用工具、审核标记","合规义务：算法备案、训练数据合法、可追溯日志、允许用户更正"]}]},{"topic":"多模态","weight":6,"color":"#ca8a04","note":"权重最低但必考 1-2 题","lectures":[{"n":10,"title":"Extended Learning: Multimodal, MoE, Large-Small Collaboration","items":["多模态：统一处理文本 / 图像 / 音频 / 视频","Qwen-VL 四能力：图像描述、VQA 视觉问答、图表理解、OCR + 推理","配对场景：拍照自动生文案、图表数据分析","MoE 混合专家：router network 打分选 top-k 专家，只激活部分参数","实例 Qwen1.5-MoE-A2.7B：激活 2.7B 参数 ≈ 7B 稠密模型性能，推理快 1.74x","大小模型协同：端侧小模型处理简单任务，复杂推理升级到云端大模型"]}]}],"LABS":{"topic":"动手实验（官方 3 个 Lab）","weight":0,"color":"#64748b","note":"官方课程实验，考试以概念形式出现","lectures":[{"n":12,"title":"LLM-ACA-001 Use LLM to Generate Work Documents","items":["Ch1 准备实验资源：开通 Model Studio、获取 API Key、免费额度","Ch2 文本创作实验：通用提示 vs Few-shot 提示","Ch3 生成工作相关文本：周报、通知、邮件","Ch4 撰写 PRD：提供完整模板作参考（结构/语气/格式/内容要求）","实例 FlowGuardian AI：核心功能、关键指标、研发计划"]},{"n":13,"title":"LLM-ACA-002 Use LLM to Generate Text Summary","items":["Ch2 情感分析：评论情感倾向与评分","Ch3 格式清洗：混杂格式统一为规范纯文本，为建索引打基础","Ch4 信息抽取：简历/新闻/公告 → 结构化 JSON","Ch5 关键词抽取：关键概念、术语、统计数据","Ch6 摘要生成：保留核心内容的简洁摘要"]},{"n":14,"title":"LLM-ACA-003 Use LLM to Analyze Data and Charts","items":["Ch1 准备实验资源","Ch2 数据与图表分析：Qwen-VL 读财报、分析图表","实验一：Super Mobile 财报分析（三步分析法）","实验二：广告投放数据对比（CTR / 转化率 / 单次转化成本）","实验三：图表解读与趋势预测"]}]},"SUMMARY":{"n":11,"title":"Learning Summary 全课总纲","items":["九大技术回炉：prompt（zero/few/role/CoT）、API 批量、插件、RAG、Agent（ReAct/ToT/多智能体）、微调（SFT/LoRA）","技术选型决策树：不是每个问题都需要微调","后续学习路径"]}};
+  var D={"TREE":[{"topic":"Prompt 工程","weight":20,"color":"#2563eb","tip":"【五要素框架】Objective 目标 / Context 上下文 / Output format 输出格式 / Simple 简洁指令 / Examples 示例 —— 全课框架，CRISPE 本质就是它的结构化","lectures":[{"n":3,"title":"Improving Response Quality Through Prompt Optimization","tip":"四技巧递进：Zero-shot 直接问 → Few-shot 给 2-5 例 → 指派角色 → 拆解复杂任务","kn":[{"t":"什么是提示工程 Prompt Engineering"},{"t":"四技巧递进：Zero-shot → Few-shot（2-5例，引导格式风格、不重训、多花 token）→ 指派角色（改视角语气）→ 拆解复杂任务 CoT","hl":1},{"t":"提示五要素：Objective / Context / Output format / Simple instructions / Examples","hl":1},{"t":"CRISPE 等框架本质 = 五要素结构化；用 ## 分隔符防止要素边界混淆（分隔符题源于此）","hl":1},{"t":"推理模型：内部长链思考，提示反而要简单直接、少堆示例 —— 与生成模型相反的新考点","hl":1},{"t":"批量生成：把处理方法写成模板，再用程序循环调用"}]},{"n":2,"title":"Typical Application Scenarios of LLMs","tip":"场景套路恒定：痛点 → 为何 LLM 合适 → 怎么写提示。真正考的是背后的决策原则","kn":[{"t":"文本创作：影视脚本、营销文案"},{"t":"代码生成：自然语言转代码、IDE 集成（通义灵码）"},{"t":"问答 / 翻译 / 摘要"},{"t":"决策原则 start simple：提示能解决 → 不上 RAG；RAG 能解决 → 不微调；需自主多步 → 才上 Agent","hl":1},{"t":"多模态产品认脸：听悟=音频转写纪要 / 万相=文生图 / 灵码=编程助手 / Qwen-VL=视觉理解","hl":1}]}]},{"topic":"API · 插件 · RAG","weight":20,"color":"#7c3aed","tip":"【一条主线】把模型当函数用（API）→ 补它的短板（插件）→ 给它外部知识（RAG）","lectures":[{"n":4,"title":"Automating Tasks with LLMs via API","tip":"messages 三角色可默写：system 人设规则 / user 提问 / assistant 历史回复","kn":[{"t":"messages 三角色：system 人设规则 / user 提问 / assistant 历史回复","hl":1},{"t":"多轮「记忆」= 每轮把历史 user/assistant 消息追加回传","hl":1},{"t":"参数三件套：temperature（低确定高多样）/ top_p（核采样，只留累积概率前 p% 候选）/ seed（固定 seed + 低温 = 可复现）","hl":1},{"t":"「每次结果一致」= 低温 + 固定 seed","hl":1},{"t":"三种调用形态：同步实时 / streaming（逐 token、降感知延迟、交互必用）/ Batch API（离线大批量、显著省钱）","hl":1},{"t":"题干关键词：夜间 / 汇总 / 上万条 → Batch API","hl":1},{"t":"工程细节：API key 放环境变量（防泄漏 + SDK 自动读）、try-except + 输入校验"},{"t":"计费 = 输入 token + 输出 token 合计"}]},{"n":5,"title":"Enhancing LLM Capabilities Through Plugins","tip":"【分工模型·必记】模型不执行工具，只按工具参数描述生成结构化调用请求 → 平台执行 → 结果回传模型","lectures2":0,"kn":[{"t":"LLM 三大天生缺陷：知识截止、不能精确计算、不能执行外部动作；插件 = 外挂能力","hl":1},{"t":"分工模型（必记）：模型不执行工具，只生成结构化调用请求；平台真正执行后回传结果","hl":1},{"t":"百炼内置三插件对号：代码解释器（数学/画图/统计，「皮尔逊相关系数」= 精确计算哨兵词）/ 搜索（实时新闻时效题）/ 图像生成（接万相）","hl":1},{"t":"进阶：企业内部 API（工单/库存）注册为自定义插件"},{"t":"多插件并存时用 system 明确各工具功能边界，防「客服机器人乱调 analytics」类路由错误","hl":1}]},{"n":6,"title":"Enhancing LLMs to Answer Unanswerable Questions via RAG","tip":"【知识外置】不改权重，提问时检索相关段落塞进提示 = 开卷答题。价值三连：减幻觉 / 知识可日更 / 私有隔离","kn":[{"t":"RAG 核心：知识外置，不改权重；提问时检索相关段落塞进提示（开卷答题）","hl":1},{"t":"价值三连：减幻觉、知识可日更、私有数据隔离","hl":1},{"t":"建索引四步固定顺序：解析（PDF→文本）→ 切片 chunking → 向量化 embedding → 入向量库","hl":1},{"t":"切片从糙到精：固定字符/Token → 句子 → 句子窗口（邻居句作上下文）→ 语义 → 按结构","hl":1},{"t":"检索改进三板斧（多选高频）：检索前 = 查询改写 / 多路查询 / HyDE 假想文档；检索后 = rerank 重排 / 滑动窗口补上下文 / 标签元数据过滤","hl":1},{"t":"生成进阶 Self-RAG：模型先反思检回内容是否有用、要不要再检，再作答（reflect before responding）","hl":1},{"t":"评估 Ragas 四指标：faithfulness 忠实度等","hl":1},{"t":"❌ 必错项：「RAG 更新了模型权重」","hl":1}]}]},{"topic":"LLM 概念","weight":18,"color":"#0891b2","tip":"【成长类比】Pre-training = 童年（学统计规律，只会续写）→ SFT = 大学（学会听指令）→ RLHF = 职场（对齐人类偏好）","lectures":[{"n":1,"title":"Understanding Large Language Models (LLMs)","tip":"脉络一层套一层：AI ⊃ ML ⊃ DL ⊃ 生成式 AI ⊃ LLM","kn":[{"t":"脉络：AI → 机器学习 ML → 深度学习 DL → 生成式 AI → LLM（依次包含）","hl":1},{"t":"三阶段训练（成长类比）：Pre-training 童年 → SFT 大学 → RLHF 职场 —— 全课最高频考点","hl":1},{"t":"预训练模型只会续写、不懂指令：问埃菲尔铁塔却接出东方明珠句式 = 语法对语义错","hl":1},{"t":"LLM 四大特征（Priority 1-4）：①参数规模大 ②强适应性与泛化 ③多样海量语料预训练 ④高算力需求。考题「哪些属于 LLM 特征」= 四项全选","hl":1},{"t":"工作原理两阶段：分词映射（三粒度：英文常 word/subword、中文常 character；subword 例 un+happy+ness；每 token 唯一 ID）→ 自回归逐 token 生成","hl":1},{"t":"生成停止条件：EOS 结束符 或 达到 max tokens","hl":1},{"t":"生态时间线：2021 斯坦福 Foundational Model → 2022.11 ChatGPT → 2023.3 国内百模 → 2023.8 Qwen 开源","hl":1},{"t":"base vs chat：base = 续写模型，chat = 指令对齐版","hl":1}]}]},{"topic":"Agent","weight":14,"color":"#ea580c","tip":"【四件套可背】Agent = LLM 大脑 + 规划 Planning + 记忆 Memory + 工具调用（与聊天机器人之别：能把目标落成自主多步行动）","lectures":[{"n":7,"title":"Empowering LLMs to Think, Decide, and Act with Agents","tip":"规划两范式看题干词：出现「交替/循环」→ ReAct；出现「多分支/回溯」→ ToT","kn":[{"t":"定义四件套：Agent = LLM 大脑 + 规划 Planning + 记忆 Memory + 工具调用","hl":1},{"t":"与聊天机器人区别：Agent 能把目标落成自主多步行动","hl":1},{"t":"规划范式 ReAct：Reason 想一步 → Act 调工具 → Observation 读结果，循环推进（题干「交替/循环」选它）","hl":1},{"t":"规划范式 ToT 思维树：多分支并行探索 + 评估 + 回溯剪枝（题干「多分支/回溯」选它）","hl":1},{"t":"框架认脸：ModelScope-Agent（魔搭系，工具参数靠 NLU 动态抽取）/ AgentScope（模块化多智能体）/ MetaGPT（软件团队角色）","hl":1},{"t":"多智能体三收益：拆专注子任务、各配专属工具与提示、独立步骤并行","hl":1},{"t":"改进方法论：第一步永远建评测集定位失败模式（「POC 后下一步」= 请领域专家构建评测集）","hl":1}]}]},{"topic":"微调","weight":12,"color":"#16a34a","tip":"【选型判据】缺「风格/格式/领域行为」→ 微调；缺「事实新鲜度」→ RAG。顺序：先 prompt + RAG 到上限，再微调","lectures":[{"n":8,"title":"Improving LLM Performance in Vertical Domains Through Fine-Tuning","tip":"数据决定一切：质量 > 数量（「微调效果不佳」常见答案 = 用大量无标注数据）","kn":[{"t":"选型判据：缺「风格/格式/领域行为」→ 微调；缺「事实新鲜度」→ RAG","hl":1},{"t":"顺序原则：先用 prompt + RAG 到上限，再考虑微调","hl":1},{"t":"适用场景：格式与接口合规、低延迟生产系统"},{"t":"数据质量四要求：高质量、覆盖目标场景、清洗去噪去重、标注一致；质量 > 数量","hl":1},{"t":"PEFT 谱系：全参微调贵 → LoRA 冻结主干只训低秩旁路（省显存、多适配器热插）→ Prompt/Prefix Tuning 更轻（只学连续提示向量，不动基座）","hl":1},{"t":"训练监控三概念：loss 曲线（训练降/验证升 = 过拟合开始）、Early Stopping（验证损失连续多轮不降即停）、学习率（过大 → 梯度震荡发散；过小 → 慢且欠拟合）","hl":1}]}]},{"topic":"安全合规","weight":10,"color":"#dc2626","tip":"【纵深防御分层记】输入（不可信原则/转义/限长/prompt firewall/提示隔离）→ 输出（实时审核+敏感词表+情感检测）→ 数据（匿名化）→ 审计日志","lectures":[{"n":9,"title":"Security and Compliance in LLM Applications","tip":"参考架构一条线：输入净化 → 意图分类 → 内容过滤 → LLM+RAG → 输出审核 → 审计日志；兜底话术 = 拒答 + 引导自助渠道","kn":[{"t":"四大风险：Prompt Injection 提示注入（如 ignore previous instructions）/ Data Leakage 数据泄露 / Jailbreak 越狱 / Hallucination 幻觉","hl":1},{"t":"输入侧防御：视所有输入为不可信 + 转义特殊字符 + 限长 + 攻击模式检测（prompt firewall）+ 系统提示与用户输入隔离","hl":1},{"t":"输出侧防御：实时审核 + 敏感词表 + 情感检测","hl":1},{"t":"数据保护：匿名化 / 不存储不传输敏感数据","hl":1},{"t":"访问控制与认证：RBAC 按角色最小授权","hl":1},{"t":"审计日志七要素（清单式考点）：时间戳、匿名用户 ID、输入、输出、模型版本、所用工具、审核标记","hl":1},{"t":"监管：中国《生成式 AI 服务管理暂行办法》四义务 = 算法备案 / 训练数据合法 / 可追溯日志 / 允许用户纠错（未备案后果 = 下架）","hl":1},{"t":"全球对照：GDPR(欧盟) / CCPA(加州) / PIPL(中国) / HIPAA(美国医疗)","hl":1}]}]},{"topic":"多模态","weight":6,"color":"#ca8a04","tip":"【MoE 三步】Router 按输入挑 top-k 专家 → Experts 计算 → Combination 合并","lectures":[{"n":10,"title":"Extended Learning: Multimodal, MoE, Large-Small Collaboration","tip":"MoE 三收益：只激活部分参数所以推理便宜快、参数可无成本堆大","kn":[{"t":"多模态：统一处理文本 / 图像 / 音频 / 视频"},{"t":"Qwen-VL 四能力：图像描述、VQA 视觉问答、图表示意图理解、OCR + 推理","hl":1},{"t":"配对场景：拍照自动生文案、图转可编辑表格；「实时语音通话」不是它的能力","hl":1},{"t":"MoE 三步：Router 按输入挑 top-k 专家 → Experts（专精子网络）计算 → Combination 合并","hl":1},{"t":"MoE 实例 Qwen1.5-MoE-A2.7B：激活 2.7B 参数 ≈ 7B 稠密模型性能，推理快 1.74x","hl":1},{"t":"大小模型协同：端侧小模型（1.8B）处理日常并判断难度，复杂上云（72B），回来端侧格式化播报","hl":1},{"t":"协同收益：云成本降、简单请求更快、隐私兼顾（手机助手 = 典型题）","hl":1}]}]}],"SUMMARY":{"topic":"总纲与选型决策","color":"#94a3b8","tip":"【全课最重要一句话】不是所有问题都需要微调或 Agent —— start simple，先 prompt + RAG，必要才升级（场景选型万能钥匙）","lectures":[{"n":11,"title":"Learning Summary","tip":"九技回炉","kn":[{"t":"九大技术回炉：prompt（zero/few/role/CoT）、API 批量、插件、RAG、Agent（ReAct/ToT/多智能体）、微调（SFT/LoRA/PromptTuning）","hl":1},{"t":"全课最重要一句话：先 prompt + RAG，必要才升级到微调或 Agent","hl":1},{"t":"进阶地图五向：部署、评测（Ragas/HELM/LMSYS）、自定义 RAG 管线、安全（对齐/红队/鲁棒）、开源生态（HF/ModelScope/Llama）"}]}]},"LABS":{"topic":"动手实验（官方 3 Lab）","color":"#64748b","tip":"官方实验内容，考试以概念形式出现","lectures":[{"n":12,"title":"LLM-ACA-001 Use LLM to Generate Work Documents","tip":"实验主线：为周报/通知/邮件写提示 → 调格式 → 套模板","kn":[{"t":"Ch1 准备资源：开通 Model Studio、获取 API Key、免费额度（30-90 天）"},{"t":"Ch2 文本创作：通用提示 vs Few-shot 提示"},{"t":"Ch3 生成工作文本：周报、通知、邮件"},{"t":"Ch4 撰写 PRD：提供完整模板作参考（结构/语气/格式/内容要求）","hl":1},{"t":"实例 FlowGuardian AI：核心功能、关键指标、研发计划"}]},{"n":13,"title":"LLM-ACA-002 Use LLM to Generate Text Summary","tip":"六类文档处理任务的完整流水线","kn":[{"t":"Ch2 情感分析：评论情感倾向与评分"},{"t":"Ch3 格式清洗：混杂格式统一为规范纯文本，为建索引打基础","hl":1},{"t":"Ch4 信息抽取：简历/新闻/公告 → 结构化 JSON","hl":1},{"t":"Ch5 关键词抽取：关键概念、术语、统计数据"},{"t":"Ch6 摘要生成：保留核心内容的简洁摘要"}]},{"n":14,"title":"LLM-ACA-003 Use LLM to Analyze Data and Charts","tip":"Qwen-VL 读财报与图表的实操","kn":[{"t":"Ch2 数据与图表分析：Qwen-VL 读财报、分析图表"},{"t":"实验一：Super Mobile 财报分析（三步分析法）"},{"t":"实验二：广告投放数据对比（CTR / 转化率 / 单次转化成本）"},{"t":"实验三：图表解读与趋势预测"}]}]}};
   var esc=function(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')};
 
-  function branch(t,idx,open){
-    var inner=t.lectures.map(function(L){
-      var lis=L.items.map(function(it){
-        // 高亮考点标记
-        var cls=/必错|必记|高频|最爱考|考点|核心/.test(it)?' style="color:var(--bad);font-weight:600"':'';
-        return '<li'+cls+'>'+esc(it)+'</li>';
-      }).join('');
-      return '<div class="tr-l"><div class="tr-lt">讲 '+L.n+' · '+esc(L.title)+'</div><ul class="tr-ul">'+lis+'</ul></div>';
+  function lecture(L){
+    var lis=L.kn.map(function(k){
+      // 高频考点：红色粗体 + 📕
+      var cls=k.hl?' class="tr-hl"':'';
+      var pre=k.hl?'<span class="tr-pin">📕</span> ':'';
+      return '<li'+cls+'>'+pre+esc(k.t)+'</li>';
     }).join('');
+    return '<div class="tr-l"><div class="tr-lt" data-ln="'+L.n+'">讲 '+L.n+' · '+esc(L.title)+'</div>'+
+      (L.tip?'<div class="tr-tip">💡 '+esc(L.tip)+'</div>':'')+
+      '<ul class="tr-ul">'+lis+'</ul></div>';
+  }
+
+  function branch(t,open){
+    var inner=t.lectures.map(lecture).join('');
+    var n=t.lectures.reduce(function(a,l){return a+l.kn.length},0);
+    var blk=t.lectures.reduce(function(a,l){return a+l.kn.filter(function(k){return k.hl}).length},0);
     return '<details class="tr-b"'+(open?' open':'')+'>'+
       '<summary><span class="tr-dot" style="background:'+t.color+'"></span>'+
       '<b>'+esc(t.topic)+'</b>'+
       (t.weight?'<span class="tag" style="background:'+t.color+'22;color:'+t.color+'">考纲 '+t.weight+'%</span>':'')+
-      '<span class="muted" style="font-size:12px;margin-left:8px">'+esc(t.note||'')+'</span>'+
-      '</summary><div class="tr-body">'+inner+'</div></details>';
+      '<span class="tr-meta">'+n+' 点 · 高频 '+blk+'</span>'+
+      '</summary><div class="tr-body">'+
+      (t.tip?'<div class="tr-mn"><b>🔑 记忆主线</b>'+esc(t.tip)+'</div>':'')+
+      inner+'</div></details>';
   }
 
   function render(){
     var box=document.getElementById('trBox');if(!box)return;
     var fold=document.getElementById('trFold');
-    var open=fold?!fold.checked:true;
-    var hh='<div class="tr-root">📘 LLM-ACA 知识体系（14 讲）</div>';
-    D.TREE.forEach(function(t,i){hh+=branch(t,i,!open)});
-    // 总纲 + 实验
-    var sm='<div class="tr-l"><div class="tr-lt">讲 '+D.SUMMARY.n+' · '+esc(D.SUMMARY.title)+'</div><ul class="tr-ul">'+
-      D.SUMMARY.items.map(function(it){return '<li>'+esc(it)+'</li>'}).join('')+'</ul></div>';
-    hh+='<details class="tr-b"'+(open?'':' open')+'><summary><span class="tr-dot" style="background:#94a3b8"></span><b>总纲与选型决策</b><span class="muted" style="font-size:12px;margin-left:8px">讲 11 · 技术选型决策树出处</span></summary><div class="tr-body">'+sm+'</div></details>';
-    hh+=branch(D.LABS,99,!open);
+    var expanded=fold?(!fold.checked):false;   // 勾选「默认折叠」→ 收起
+    var hh='<div class="tr-root">📘 LLM-ACA 知识体系 · 14 讲 / 85 知识点 / 63 高频考点</div>';
+    D.TREE.forEach(function(t){hh+=branch(t,expanded)});
+    hh+=branch(D.SUMMARY,expanded);
+    hh+=branch(D.LABS,expanded);
     box.innerHTML=hh;
-    // 点击讲次 → 跳到课程页
     box.querySelectorAll('.tr-lt').forEach(function(el){
-      var m=el.textContent.match(/讲 (\d+)/);
-      if(!m)return;
-      el.style.cursor='pointer';el.title='点击跳转到该讲';
+      var n=+el.dataset.ln;if(!n)return;
+      el.style.cursor='pointer';el.title='点击跳转到第 '+n+' 讲原文';
       el.onclick=function(){
         var nav=document.querySelector('[data-t=course]');if(nav)nav.click();
         var sel=document.getElementById('courseNav');
-        if(sel){sel.value=String(+m[1]-1);sel.onchange()}
+        if(sel){sel.value=String(n-1);sel.onchange()}
         window.scrollTo(0,0);
       };
     });
@@ -1711,6 +1725,13 @@ document.addEventListener('keydown',function(e){
     ds.forEach(function(d){if(!d.open)anyClosed=true});
     ds.forEach(function(d){d.open=anyClosed});
     ex.textContent=anyClosed?'全部折叠':'全部展开';
+  };
+  var only=document.getElementById('trOnlyHL');
+  if(only)only.onchange=function(){
+    var box=document.getElementById('trBox');if(!box)return;
+    box.classList.toggle('hl-only',only.checked);
+    if(only.checked)box.querySelectorAll('details').forEach(function(d){d.open=true});
+    else render();
   };
   var _st=window.showTab;
   if(typeof _st==='function'){
