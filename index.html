@@ -196,18 +196,18 @@ a:hover{text-decoration:underline}
 .mm-wrap{position:relative;display:grid;grid-template-columns:150px 200px 230px minmax(0,1fr);
   gap:0;align-items:start;padding:6px 4px 20px 4px}
 .mm-svg{position:absolute;left:0;top:0;pointer-events:none;z-index:0}
-#mmGrid{display:grid;grid-template-columns:150px 190px 215px minmax(420px,1fr);
+#mmGrid{display:grid;width:100%;max-width:100%;box-sizing:border-box;grid-template-columns:120px 170px 190px minmax(0,1fr);
   align-items:start;position:relative;z-index:1;width:100%;max-width:100%}
-.mm-rootcell{grid-row:1/span 9;display:flex;align-items:center;justify-content:flex-start;
-  position:sticky;left:0;background:var(--bg);z-index:3}
+.mm-rootcell{grid-row:1/span 9;display:flex;align-items:flex-start;justify-content:center;
+  padding:26px 2px 0 2px;background:var(--bg);z-index:3}
 .tp{align-self:start;margin:2px 6px 2px 0}
 .lcbox,.ptbox{display:flex;flex-direction:column}
-.lcbox{padding:2px 8px 12px 0;gap:3px}
-.ptbox{padding:2px 0 16px 0}
+.lcbox{padding:2px 8px 12px 0;gap:3px;min-width:0}
+.ptbox{padding:2px 0 16px 0;min-width:0}
 .mm-root-box{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border-radius:14px;
-  padding:14px 12px;text-align:center;font-weight:700;font-size:15px;line-height:1.35;
-  box-shadow:0 4px 14px rgba(37,99,235,.28);margin:0 6px}
-.mm-root-box span{font-size:11px;font-weight:400;opacity:.85}
+  padding:13px 10px;text-align:center;font-weight:700;font-size:14px;line-height:1.4;
+  box-shadow:0 4px 14px rgba(37,99,235,.28);margin:0 4px;white-space:nowrap}
+.mm-root-box span{font-size:10.5px;font-weight:400;opacity:.88;white-space:nowrap}
 /* 主题节点 */
 .tp{margin:3px 6px 3px 0;padding:9px 11px;border-radius:10px;cursor:pointer;
   background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);
@@ -243,8 +243,8 @@ a:hover{text-decoration:underline}
 }
 }
 /* __MINDMAP_C2__ 全展开与缩放 */
-#mmHolder{overflow:auto;max-height:calc(100vh - 230px);border:1px solid var(--line);border-radius:10px;background:var(--bg)}
-.mm-wrap{max-height:none;overflow:visible;padding:10px 8px 24px 8px}
+#mmHolder{overflow:auto;max-height:calc(100vh - 250px);border:1px solid var(--line);border-radius:10px;background:var(--bg);width:100%;box-sizing:border-box}
+.mm-wrap{max-height:none;overflow:visible;padding:10px 8px 24px 8px;margin:0 auto;box-sizing:border-box;display:block}
 .mm-c2{width:200px;gap:0}
 .mm-c3{width:230px}
 .mm-c4{width:min(560px,48vw)}
@@ -1754,9 +1754,13 @@ document.addEventListener('keydown',function(e){
   function draw(){
     var svg=document.getElementById('mmSvg'),wrap=document.getElementById('mmWrap');
     if(!svg||!wrap)return;
+    // 坐标基准：mmWrap 左上角（用 getBoundingClientRect 差值，避免 sticky 干扰）
+    var cs=getComputedStyle(wrap);
+    var padL=parseFloat(cs.paddingLeft)||0, padT=parseFloat(cs.paddingTop)||0;
     var wr=wrap.getBoundingClientRect();
-    var wl=wr.left-wrap.scrollLeft, wt=wr.top-wrap.scrollTop;
-    var W=wrap.scrollWidth,H=wrap.scrollHeight;
+    var wl=wr.left+padL, wt=wr.top+padT;   // 内容区原点（排除 padding）
+    var gEl=document.getElementById('mmGrid');
+    var W=Math.max(wrap.clientWidth,gEl?gEl.scrollWidth:0),H=wrap.scrollHeight;
     svg.setAttribute('width',W);svg.setAttribute('height',H);
     svg.setAttribute('viewBox','0 0 '+W+' '+H);
     svg.style.width=W+'px';svg.style.height=H+'px';
@@ -1772,6 +1776,7 @@ document.addEventListener('keydown',function(e){
     if(!root)return;
     var rr=root.getBoundingClientRect();
     var x0=rr.right-wl, y0=rr.top-wt+rr.height/2;
+    if(y0<0)y0=rr.height/2;   // sticky 异常时兜底
     var tps=document.querySelectorAll('.tp');
     var N=tps.length, spread=Math.min(rr.height*4.5,N*18);
 
@@ -1780,6 +1785,7 @@ document.addEventListener('keydown',function(e){
       var x1=r.left-wl, y1=r.top-wt+r.height/2;
       var tc=ALL[i]?ALL[i].color:'#94a3b8';
       var sy=y0+(N>1?(-spread/2+spread*i/(N-1)):0);
+      if(sy<4)sy=4;   // 钳制到画布内，避免负坐标
       p+=curve(x0+1,sy,x1,y1,tc,.5,2);
       p+=node(x1,y1,tc,3);
       // 主题 → 该主题的讲次
