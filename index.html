@@ -90,6 +90,15 @@ tr:hover td{background:var(--accent-light)}
 
 /* ===== Reading passages ===== */
 .read{font-size:15.5px;line-height:2;color:var(--text)}
+/* __LAYOUT__ 课程原文结构化排版 */
+.read p{margin:9px 0;line-height:1.9}
+.read h5.c-ch{font-size:16px;margin:22px 0 8px;padding:6px 0 6px 10px;border-left:3px solid var(--accent);color:var(--accent-dark);font-weight:700}
+.read h6.c-sec{font-size:14.5px;margin:16px 0 6px;color:var(--accent-dark);font-weight:700}
+.read .c-lab{font-size:13px;font-weight:700;color:var(--muted);margin:12px 0 4px;letter-spacing:.3px}
+.read ul.c-ul{margin:8px 0 8px;padding-left:20px}
+.read ul.c-ul li{margin:4px 0;line-height:1.85}
+.read .c-note{margin:8px 0;padding:8px 12px;background:var(--accent-light);border-left:3px solid var(--accent);border-radius:6px;font-size:14px}
+.read .c-block{margin:10px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-x:auto}
 .read .gw b{color:var(--accent);font-weight:600;border-bottom:2px solid var(--accent-light);cursor:help}
 .read .gw i{display:none;font-style:normal;color:var(--muted);font-size:13px;background:var(--accent-light);padding:1px 6px;border-radius:4px;margin-left:3px}
 .read:not(.ng) .gw i{display:inline}
@@ -766,7 +775,82 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
  let GRE=null;try{GRE=new RegExp('\\b('+GT2.map(([e])=>escRe(e)).join('|')+')\\b','gi')}catch(e){console.warn('gloss regex fail',e)}
  function gloss(html){if(!GRE)return html;return html.replace(GRE,m=>{const hit=GT2.find(([e])=>e.toLowerCase()===m.toLowerCase());if(!hit)return m;
   return '<span class="gw" data-w="'+hit[0].replace(/"/g,'&quot;')+'" onclick="openVocabModal(this.dataset.w)"><b>'+m+'</b><i>（'+(hit[1]||'').split(/[／\/]/)[0]+'）</i></span>'})}
- function isHead(p){return p.length<95&&/^(\d+(\.\d+)*[\.、\s（(]|Step \d|Preface|Goals|Summary|Quiz|Practice|Part |#{1,3} )/.test(p)}
+ function isHead(p){return isHead2(p).k==='h'}
+ /* __LAYOUT__ 块分类器：把每个段落归为 标题/列表/提示/正文 */
+ function isHead2(p){
+  const s=String(p).trim();
+  if(!s)return{k:'empty'};
+  const short=s.length<110;
+  // 章节级
+  if(/^Chapter\s*\d+\s*[:：]/i.test(s)){
+   // 标题常与后续正文粘在一段（PDF 抽丢失换行）→ 在 "Background/Experiment/Chapter" 等词前切开
+   const mm=s.match(/^(Chapter\s*\d+\s*[:：].*?)(?=\s+(?:Background and Sample|Background\b|Sample\b|Prompt\b|Task\b|Note\b|Hands-on|Go to the)\b|$)/i);
+   const t=mm&&mm[1]?mm[1].trim():s.slice(0,60);
+   return{k:'h',lv:1,t:t};
+  }
+  if(/^(Part|Section|Module|Unit|Lesson)\s*\d+\s*[:：]/i.test(s))return{k:'h',lv:1,t:s};
+  // 编号小节 1.1 / 2.3.1
+  if(/^\d+(\.\d+)+[\.\s]/.test(s)&&short)return{k:'h',lv:2,t:s};
+  if(/^\d+[\.、]\s*\S/.test(s)&&short&&!/[。.]$/.test(s))return{k:'h',lv:2,t:s};
+  // 常见小节标签
+  // 这些词若整段就是这个标签 → 标签；若后面紧跟内容 → 拆出标签 + 正文
+  const labWords=/^(Learning Objectives|Goals|Summary|Preface|Keywords?|Introduction|Background|Overview|References?|Congratulations|Quiz|Practice|Appendix)\b/i;
+  if(short&&labWords.test(s)){
+    const rest=s.replace(labWords,'').replace(/^[\s:：•·]+/,'').trim();
+    if(!rest)return{k:'label',t:s};
+    if(rest.length<=56)return{k:'h',lv:2,t:s};
+    return{k:'h',lv:2,t:s.slice(0,s.length-rest.length).trim()||s.slice(0,30),splitRest:rest};
+  }
+  // [Background] / [Sample] / 【示例】等方括号块标记
+  if(short&&/^[\[【(（][^\]】)）]{1,24}[\]】)）]\s*[:：]?\s*$/.test(s))return{k:'h',lv:3,t:s};
+  // Experiment / Task / Step / Note / Prompt
+  if(short&&/^(Experiment|Task|Step|Exercise)\s*\d*\s*[:：]/i.test(s))return{k:'h',lv:3,t:s};
+  if(/^(Hands-on|Hands on|动手实验)/i.test(s)&&short)return{k:'h',lv:3,t:s};
+  if(/^(Note|Tip|Warning|Important)\s*[:：]/i.test(s))return{k:'note',t:s};
+  if(/^Prompt(\s+format\s+reference)?\s*[:：]?\s*$/i.test(s))return{k:'label',t:s};
+  if(/^[A-Za-z][A-Za-z \/\-]{2,40}\s*[:：]\s*$/.test(s))return{k:'label',t:s};
+  // 纯列表段
+  if(/^[•·▪‣]\s*/.test(s))return{k:'bullets',t:s};
+  if(/^[\-\*]\s+\S/.test(s)&&!/^\-\-\-/.test(s))return{k:'bullets',t:s};
+  if(/^●\s*/.test(s))return{k:'bullets',t:s};
+  return{k:'para',t:s};
+ }
+ /* 把 "• a • b • c" 拆成数组 */
+ function splitBullets(s){
+  return String(s).split(/\s*(?=[•·▪‣●]\s*)/).map(x=>x.replace(/^[•·▪‣●]\s*/,'').trim()).filter(Boolean);
+ }
+ /* __LAYOUT__ 内嵌选择题（A. … B. … C. … D. …）拆为独立列表 */
+ function splitChoice(s){
+  const t=String(s);
+  const m=t.match(/\s+(?=[A-D][\.、\)]\s)/g);
+  if(!m||m.length<2)return null;
+  const parts=t.split(/\s+(?=[A-D][\.、\)]\s)/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length<3)return null;
+  // 首个 part 可能是题干
+  return parts;
+ }
+ /* __LAYOUT__ 超长段落拆分：按内嵌标记/多句切分为可读小块 */
+ function splitLong(s){
+  const t=String(s);
+  if(t.length<200)return[t];
+  // 1) 内嵌标记（Example N / Task / Sample output / Step N / Prompt 等）前断开
+  const marked=t.split(/(?=\b(?:Example\s*\d+|Task\s*(?:objective|background)?\s*[:：]|Sample\s+output\s*[:：]?|Step\s*\d+|Prompt\s*[:：]|Reference[s]?\s*(?:generation)?\s*[:：]|Note\s*[:：]|Experiment\s*\d+)\b)/i)
+    .map(x=>x.trim()).filter(Boolean);
+  if(marked.length>1)return marked;
+  // 2) 否则按句号切，每 ~2 句合并
+  const sents=t.split(/(?<=[.!?。！？])\s+/).map(x=>x.trim()).filter(Boolean);
+  if(sents.length<=2){
+    // 句数少但整体过长 → 在分号/破折号/连接副词处切
+    const parts=t.split(/(?<=[;；])\s+|\s+(?=However,|Moreover,|In addition,|For example,|Therefore,|Meanwhile,|Also,|Besides,|Thus,)\s*/i)
+      .map(x=>x.trim()).filter(Boolean);
+    if(parts.length>1)return parts;
+    return[t];
+  }
+  const out=[];let cur='';
+  sents.forEach(sn=>{cur=cur?cur+' '+sn:sn;if(cur.length>=155){out.push(cur);cur=''}});
+  if(cur)out.push(cur);
+  return out;
+ }
  function h4(t){return '<h4 style="margin:18px 0 6px;font-size:15.5px;color:var(--accent-dark)">'+t+'</h4>'}
  function render(){
   const L=COURSE2[(+$('#courseNav').value)||0];
@@ -776,13 +860,87 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
   if(L.traps&&L.traps.length)h+='<h3>⚠️ 易错点</h3><ul style="margin:6px 0 0;padding-left:22px;color:var(--bad)">'+L.traps.map(k=>'<li style="margin:4px 0;font-size:14px">'+k+'</li>').join('')+'</ul>';
   h+='<div style="margin-top:14px"><button class="btn ghost sm" onclick="bankJump(\''+(L.bankQ||'')+'\')">🔎 练一练：本讲主题在题库中检索</button></div></div>';
   const g0=$('#crGloss');const show=g0?g0.checked:true;
+  /* __LAYOUT__ 结构化渲染：按块类型分别输出，列表/提示不再堆成大段 */
   let body='',buf=[],bufZh=[];const zhArr=L.parasZh||[];
-  const flushP=()=>{if(buf.length){body+='<p style="margin:8px 0">'+buf.join(' ')+'</p>';const zt=bufZh.filter(Boolean).map(z=>z.replace(/&/g,'&amp;').replace(/</g,'&lt;')).join('<br>');if(zt)body+='<details style="margin:2px 0 12px"><summary style="cursor:pointer;font-size:12px;color:#5b9cf6">🀄 中文翻译</summary><div style="font-size:13.5px;line-height:1.75;color:#8fa3b8;margin-top:6px">'+zt+'</div></details>';buf=[];bufZh=[]}};
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const zhBlock=(list)=>{const zt=list.filter(Boolean).map(z=>esc(z)).join('<br>');return zt?'<details style="margin:2px 0 14px"><summary style="cursor:pointer;font-size:12px;color:#5b9cf6">🀄 中文翻译</summary><div style="font-size:13.5px;line-height:1.8;color:#8fa3b8;margin-top:6px">'+zt+'</div></details>':''};
+  // __LAYOUT__ 关键修复：每个源段独立成 <p>，不再 join 成巨型段落
+  const flushP=()=>{if(!buf.length)return;
+    buf.forEach((seg,i)=>{
+      const z=zhArr && bufZh[i] ? [bufZh[i]] : [];
+      // 该段若是 A-D 选项 → 归入列表
+      if(/^[A-D][\.、\)]\s/.test(seg.replace(/<[^>]+>/g,''))){
+        ulBuf.push(seg);ulZh.push(z[0]||'');
+      } else {
+        body+='<p>'+seg+'</p>'+zhBlock(z);
+      }
+    });
+    buf=[];bufZh=[]};
+  // 连续列表项合并为一个 <ul>
+  let ulBuf=[],ulZh=[];
+  const flushUL=()=>{if(!ulBuf.length)return;
+    body+='<ul class="c-ul">'+ulBuf.map(t=>'<li>'+t+'</li>').join('')+'</ul>'+zhBlock(ulZh);ulBuf=[];ulZh=[]};
+
   L.paras.forEach((p,pi)=>{
-   const e=p.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-   if(isHead(p)){flushP();body+=h4(e);return}
-   buf.push(show?gloss(e):e);bufZh.push(zhArr[pi]||'');});
-  flushP();
+   const raw=String(p);const cls=isHead2(raw);const z=zhArr[pi]||'';
+   const pushText=(txt)=>{const hh=(show?gloss(esc(txt)):esc(txt));buf.push(hh);bufZh.push(z)};
+   if(cls.k==='empty')return;
+   if(cls.k==='h'){
+     flushP();flushUL();
+     const lv=cls.lv||2;
+     body+= lv===1 ? '<h5 class="c-ch">'+esc(cls.t)+'</h5>' : '<h6 class="c-sec">'+esc(cls.t)+'</h6>';
+     if(cls.splitRest){body+='<p>'+esc(cls.splitRest)+'</p>'}
+     if(z)body+=zhBlock([z]);
+     return;
+   }
+   if(cls.k==='label'){flushP();flushUL();body+='<div class="c-lab">'+esc(cls.t)+'</div>';if(z)body+=zhBlock([z]);return}
+   if(cls.k==='note'){flushP();flushUL();body+='<div class="c-note">'+esc(cls.t)+'</div>';if(z)body+=zhBlock([z]);return}
+   if(cls.k==='bullets'){
+     flushP();
+     const items=splitBullets(raw);
+     items.forEach(it=>{ulBuf.push(show?gloss(esc(it)):esc(it));ulZh.push('')});
+     // 中文按整段挂在该列表后
+     if(z)ulZh[ulZh.length-1]=z;
+     return;
+   }
+   // 正文：若内部含多个 • 则也拆列表
+   const inner=(raw.match(/[•·▪‣●]/g)||[]).length;
+   if(inner>=2){
+     flushP();
+     splitBullets(raw).forEach(it=>{ulBuf.push(show?gloss(esc(it)):esc(it));ulZh.push('')});
+     if(z)ulZh[ulZh.length-1]=z;
+     return;
+   }
+   flushUL();
+   // 内嵌选择题 → 题干 + 选项列表
+   const choice=splitChoice(raw);
+   if(choice){
+     const stem=choice[0];
+     if(stem)pushText(stem);
+     flushP();
+     flushUL();
+     choice.slice(1).forEach(op=>{ulBuf.push(show?gloss(esc(op)):esc(op));ulZh.push('')});
+     const z2=z;if(z2){ulZh[ulZh.length-1]=z2;bufZh.push('')}
+     return;
+   }
+   // 先按源文本粗拆
+   let parts=splitLong(raw);
+   // 再检查"渲染后（含中文括注）"是否仍过长 → 按句子细拆
+   const rendLen=(t)=>(show?gloss(esc(t)):esc(t)).length;
+   if(parts.length===1&&rendLen(raw)>520){
+     const sents=raw.split(/(?<=[.!?。！？])\s+/).map(x=>x.trim()).filter(Boolean);
+     if(sents.length>1){
+       const out=[];let cur='';
+       sents.forEach(sn=>{cur=cur?cur+' '+sn:sn;if(rendLen(cur)>=420){out.push(cur);cur=''}});
+       if(cur)out.push(cur);
+       parts=out.length>1?out:[raw];
+     }
+   }
+   if(parts.length>1){
+     parts.forEach((pt,k)=>{pushText(pt);if(k<parts.length-1){flushP()}});
+   } else pushText(raw);
+  });
+  flushP();flushUL();
   h+='<div class="card"><div class="row"><h3 style="margin:0">📜 课程原文（蓝色下划线=专业术语，点击开下钻页；灰色括注可开关）</h3><span style="flex:1"></span><label class="switch"><input type="checkbox" id="crGloss" '+(show?'checked':'')+'>术语标注</label></div><div class="read" style="font-size:14.5px;line-height:1.95">'+body+'</div></div>';
   $('#courseContent').innerHTML=h;
   const g=$('#crGloss');if(g)g.onchange=render;}
