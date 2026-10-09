@@ -816,12 +816,13 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
   // 纯列表段
   if(/^[•·▪‣]\s*/.test(s))return{k:'bullets',t:s};
   if(/^[\-\*]\s+\S/.test(s)&&!/^\-\-\-/.test(s))return{k:'bullets',t:s};
-  if(/^●\s*/.test(s))return{k:'bullets',t:s};
+  if(/^●\s+/.test(s))return{k:'bullets',t:s};
   return{k:'para',t:s};
  }
  /* 把 "• a • b • c" 拆成数组 */
  function splitBullets(s){
-  return String(s).split(/\s*(?=[•·▪‣●]\s*)/).map(x=>x.replace(/^[•·▪‣●]\s*/,'').trim()).filter(Boolean);
+  // 注意：不能把 · (U+00B7) 当 bullet —— DALL·E 里就是这个字符
+  return String(s).split(/\s*(?=[•▪‣●]\s+)/).map(x=>x.replace(/^[•▪‣●]\s+/,'').trim()).filter(Boolean);
  }
  /* __LAYOUT__ 内嵌选择题（A. … B. … C. … D. …）拆为独立列表 */
  function splitChoice(s){
@@ -912,19 +913,24 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
    if(cls.k==='note'){flushAll();body+='<div class="c-note">'+esc(cls.t)+'</div>';if(z)body+=zhBlock([z]);return}
 
    // —— 列表段
-   if(cls.k==='bullets'||(raw.match(/[•·▪‣●]/g)||[]).length>=2){
+   if(cls.k==='bullets'||(raw.match(/[•▪‣●]/g)||[]).length>=2){
      flushP();
      const items=splitBullets(raw);
      const rest=[];
     items.forEach((it)=>{
-       const sents=it.split(/(?<=[.!?。])\s+(?=[A-Z])/);
-       if(sents.length>1&&sents[0].length<120){
-         ulBuf.push(show?gloss(esc(sents[0])):esc(sents[0]));
-         const r=sents.slice(1).join(' ').trim();
-         if(r)rest.push(r);
+       // 形如 "短标签 后面是完整句子" → 拆出标签与正文
+       let label=it, tail='';
+       const m2=it.match(/^(.{2,42}?)\s+(?=(?:These|This|They|It|The|Such|Models?|DL|LLMs?)\b)/);
+       if(m2&&m2[1].length<=42&&it.length-m2[1].length>40){
+         label=m2[1].trim(); tail=it.slice(m2[1].length).trim();
        } else {
-         ulBuf.push(show?gloss(esc(it)):esc(it));
+         const sents=it.split(/(?<=[.!?。])\s+(?=[A-Z])/);
+         if(sents.length>1&&sents[0].length<120){
+           label=sents[0]; tail=sents.slice(1).join(' ').trim();
+         }
        }
+       ulBuf.push(show?gloss(esc(label)):esc(label));
+       if(tail)rest.push(tail);
      });
      // 整个列表只挂一个译文框
      if(z)ulZh.push(z);
@@ -943,9 +949,27 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
      return;
    }
 
-   // —— 普通正文：累加进当前块
+   // —— 普通正文：先切掉段首粘连的小节标签
    flushUL();
-   addP(raw,z);
+   let body2=raw,labHead='';
+   // (a) "XXX XXX ..." 重复词（PDF 抽取把标题与正文粘一起）
+   const dup=body2.match(/^([A-Z][A-Za-z ]{2,28}?)\s+\1/);
+   if(dup){labHead=dup[1].trim();body2=body2.slice(labHead.length).trim()}
+   // (b) 段落中部的标签词（Generative AI / Summary / Note 等）→ 拆为独立小节
+   const LBL='(?:Generative AI|Summary|Note|Tip|Key Characteristics|Classification)';
+   const mid=body2.match(new RegExp('^(.*?)\\s+'+LBL+'\\s+(?=[A-Z]|With )'));
+   if(mid&&mid[1].length>0){
+     addP(mid[1],'');flushP();
+     body2=body2.slice(mid[1].length).trim();
+     const lab=body2.match(new RegExp('^'+LBL));
+     if(lab){labHead=lab[0];body2=body2.slice(lab[0].length).trim()}
+   } else {
+     // 段首即标签："Summary With this foundation..."
+     const head=body2.match(new RegExp('^'+LBL+'\\s+(?=[A-Z]|With )'));
+     if(head){labHead=head[0].trim();body2=body2.slice(head[0].length).trim()}
+   }
+   if(labHead){flushP();body+='<h6 class="c-sec">'+esc(labHead)+'</h6>'}
+   addP(body2,z);
   });
   flushAll();h+='<div class="card"><div class="row"><h3 style="margin:0">📜 课程原文（蓝色下划线=专业术语，点击开下钻页；灰色括注可开关）</h3><span style="flex:1"></span><label class="switch"><input type="checkbox" id="crGloss" '+(show?'checked':'')+'>术语标注</label></div><div class="read" style="font-size:14.5px;line-height:1.95">'+body+'</div></div>';
   $('#courseContent').innerHTML=h;
