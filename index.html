@@ -296,6 +296,7 @@ a:hover{text-decoration:underline}
     <button data-t="course">📘 官方课程精读</button>
     <button data-t="checklist">📝 考前清单</button>
     <button data-t="wrong">📕 错题本</button>
+    <button data-t="probe">📊 数据分析</button>
     <button data-t="sprint">📅 冲刺计划</button>
     <button data-t="tree">🗺️ 知识框架</button>
   </nav>
@@ -438,6 +439,7 @@ a:hover{text-decoration:underline}
     <div id="rBreak"></div>
     <h3 style="margin-top:18px">逐题解析</h3>
     <div id="rList"></div>
+    <div id="rProbe"></div>
   </div>
 </section>
 
@@ -554,6 +556,15 @@ a:hover{text-decoration:underline}
 </div>
 </section>
 
+<section id="probe">
+  <div class="card">
+    <div class="row"><h2 style="margin:0">📊 考试数据分析</h2><span style="flex:1"></span>
+      <button class="btn ghost sm" id="pbExport">导出 JSON</button>
+      <button class="btn ghost sm" id="pbClear">清空记录</button></div>
+    <div id="pbBox"></div>
+  </div>
+</section>
+
 </main>
 <footer>仅供本人备考 · 资料来自阿里云官方公开渠道 · 本地离线可用 · <a href="README.md">文字版资料在同目录</a></footer>
 
@@ -657,8 +668,114 @@ function buildBankFor(mode){let pool;
   pool=shuffleArr(pool).map(q=>({...q,ans:q.ans.slice()})).map(shufOpts)}
  const isL=(mode==='l'||mode==='lv');return{pool,label:BANKNAME[mode],dur:isL?3600:5400,pass:isL?80:70}}
 function buildBank(){const mode=$('#exBank').value;return buildBankFor(mode)}
+
+/* __PROBE__ 考试过程数据采集
+   设计：不改动原有考试逻辑，用"记录器"旁路收集，失败不影响考试
+   采集项：
+     · 总用时 / 每题用时 / 超时题 / 过快题(<10s 疑似猜测)
+     · 逐题：最终对错、作答次数、改答案次数、是否标记
+     · 主题维度正确率
+     · 改答案行为（改对/改错/改中性）
+*/
+window.__PROBE__=(function(){
+  var P=null;                     // 当前进行中的采集
+  var KEY='llmaca_probe_hist';
+  function now(){return Date.now()}
+
+  function begin(ex,pool,label,dur,pass){
+    P={label:label,dur:dur,pass:pass,start:now(),
+       qs:pool.map(function(q){
+         return {zone:(typeof zoneOf==='function'?zoneOf(q):''),
+                 topic:(typeof topicOf==='function'?topicOf(q):''),
+                 type:q.t,firstAt:0,lastAt:0,changes:0,flags:0,visited:0};
+       }),
+       cur:0,curEnter:now(),seq:[]};
+  }
+  function enter(i){
+    if(!P)return;
+    // 结算上一题
+    if(P.cur!==i&&P.qs[P.cur]){
+      var q=P.qs[P.cur];
+      q.lastAt=now();
+      if(!q.firstAt)q.firstAt=P.curEnter;
+    }
+    P.cur=i;P.curEnter=now();
+    if(P.qs[i]){P.qs[i].visited++;if(!P.qs[i].firstAt)P.qs[i].firstAt=now()}
+  }
+  function onAnswer(i,before,after){
+    if(!P||!P.qs[i])return;
+    var q=P.qs[i];
+    // 只在"选项集合真正变化"时计数
+    var b=before.slice().sort().join(','),a=after.slice().sort().join(',');
+    if(b!==a){
+      q.changes++;
+      q.lastAt=now();
+      P.seq.push({i:i,t:now()-P.start,from:b,to:a});
+    }
+  }
+  function onFlag(i,on){if(P&&P.qs[i])P.qs[i].flags+=on?1:0}
+  function finish(review,score,label,pass){
+    if(!P)return null;
+    var end=now(),total=Math.round((end-P.start)/1000);
+    var per=[],slow=[],fast=[],never=[];
+    P.qs.forEach(function(q,i){
+      var sec=q.firstAt?Math.round((q.lastAt||q.firstAt)-q.firstAt):0;
+      var r=review&&review[i];
+      var rec={i:i,zone:q.zone,topic:q.topic,type:q.type,sec:sec,
+               changes:q.changes,flags:q.flags,visited:q.visited,
+               ok:r?!!r.ok:null};
+      per.push(rec);
+      if(q.visited===0)never.push(i);
+      else if(sec>=180)slow.push(i);
+      else if(sec>0&&sec<10)fast.push(i);
+    });
+    var right=per.filter(function(x){return x.ok}).length;
+    // 主题维度
+    var byZone={},byTopic={};
+    per.forEach(function(x){
+      var z=x.zone||'未分区';byZone[z]=byZone[z]||{right:0,total:0,sec:0};
+      byZone[z].total++;byZone[z].sec+=x.sec;if(x.ok)byZone[z].right++;
+      var tp=x.topic||'未分类';byTopic[tp]=byTopic[tp]||{right:0,total:0,sec:0};
+      byTopic[tp].total++;byTopic[tp].sec+=x.sec;if(x.ok)byTopic[tp].right++;
+    });
+    // 改答案行为
+    var ch={total:0,toRight:0,toWrong:0,neutral:0};
+    P.qs.forEach(function(q,i){
+      if(!q.changes)return;
+      ch.total+=q.changes;
+      var r=review&&review[i];
+      if(r){if(r.ok)ch.toRight++;else ch.toWrong++}else ch.neutral++;
+    });
+    // 题型维度
+    var byType={};
+    per.forEach(function(x){
+      var t=x.type||'single';byType[t]=byType[t]||{right:0,total:0,sec:0};
+      byType[t].total++;byType[t].sec+=x.sec;if(x.ok)byType[t].right++;
+    });
+    var rec={ts:end,date:new Date(end).toLocaleString('zh-CN'),
+      label:label,score:score,pass:pass,total:total,
+      n:per.length,right:right,
+      perQ:per,byZone:byZone,byTopic:byTopic,byType:byType,changes:ch,
+      slow:slow,fast:fast,never:never};
+    try{
+      var hist=JSON.parse(localStorage.getItem(KEY)||'[]');
+      hist.push({ts:rec.ts,date:rec.date,label:label,score:score,pass:pass,total:total,
+        n:rec.n,right:right,byZone:byZone,byTopic:byTopic,byType:byType,changes:ch,
+        avgSec:Math.round(total/Math.max(1,per.length))});
+      localStorage.setItem(KEY,JSON.stringify(hist.slice(-50)));
+    }catch(e){}
+    P=null;
+    return rec;
+  }
+  function abort(){P=null}
+  function current(){return P}
+  return {begin:begin,enter:enter,onAnswer:onAnswer,onFlag:onFlag,
+          finish:finish,abort:abort,current:current,KEY:KEY};
+})();
+
 function startExam(){if(EX&&EX.iv)clearInterval(EX.iv);
  const{pool,label,dur,pass}=buildBank();EX={qs:pool,label,dur,pass,i:0,ans:pool.map(()=>new Set()),flags:new Set(),t:dur};
+ if(window.__PROBE__)window.__PROBE__.begin(EX,pool,label,dur,pass);
  if(window.__examSave)window.__examSave();
  $('#examHome').style.display='none';$('#examResult').style.display='none';$('#examRun').style.display='';
  $('#tClock').textContent=String(Math.floor(EX.dur/60)).padStart(2,'0')+':00';$('#tClock').style.color='var(--accent)';
@@ -666,11 +783,15 @@ function startExam(){if(EX&&EX.iv)clearInterval(EX.iv);
   $('#tClock').textContent=`${m}:${s}`;if(EX.t<=300)$('#tClock').style.color='var(--bad)';if(EX.t<=0){clearInterval(EX.iv);submitExam(true)}},1000);
  renderQ();renderPal()}
 function renderQ(){const q=EX.qs[EX.i];const sel=EX.ans[EX.i];const N=EX.qs.length;
+ if(window.__PROBE__)window.__PROBE__.enter(EX.i);
  $('#tQ').innerHTML=`<div style="margin-top:10px"><div class="muted">${EX.label} · 共${N}题</div>${qHeader(q,EX.i)}</div>`+
   (q.t==='tf'?['0','1'].map(v=>`<button class="opt ${sel.has(+v)?'sel':''}" data-v="${v}">${v==0?'✓ True（对）':'✗ False（错）'}</button>`).join('')
   :q.opts.map((o,j)=>`<button class="opt ${sel.has(j)?'sel':''}" data-v="${j}"><b>${LETTERS[j]}.</b> ${o}</button>`).join(''));
  $('#tQ').querySelectorAll('.opt').forEach(b=>b.onclick=()=>{const v=+b.dataset.v;
-   if(q.t==='multi'){sel.has(v)?sel.delete(v):sel.add(v)}else{sel.clear();sel.add(v)}renderQ()});
+   const _b4=[...sel];
+   if(q.t==='multi'){sel.has(v)?sel.delete(v):sel.add(v)}else{sel.clear();sel.add(v)}
+   if(window.__PROBE__)window.__PROBE__.onAnswer(EX.i,_b4,[...sel]);
+   renderQ()});
  $('#tPos').textContent=`第 ${EX.i+1} / ${N} 题 · ${({single:'单选',multi:'多选',tf:'判断'})[q.t]}`;
  $('#tFlag').textContent=EX.flags.has(EX.i)?'🚩 取消标记':'🚩 标记本题';
  $('#tBar').style.width=((EX.i+1)/N*100)+'%';
@@ -680,7 +801,7 @@ function renderPal(){$('#tPalette').innerHTML=EX.qs.map((q,i)=>`<div class="dot 
 $('#startExam').onclick=startExam;
 $('#tNext').onclick=()=>{if(EX.i<EX.qs.length-1)EX.i++;renderQ()};
 $('#tPrev').onclick=()=>{if(EX.i>0)EX.i--;renderQ()};
-$('#tFlag').onclick=()=>{EX.flags.has(EX.i)?EX.flags.delete(EX.i):EX.flags.add(EX.i);renderQ()};
+$('#tFlag').onclick=()=>{const _fo=!EX.flags.has(EX.i);EX.flags.has(EX.i)?EX.flags.delete(EX.i):EX.flags.add(EX.i);if(window.__PROBE__)window.__PROBE__.onFlag(EX.i,_fo);renderQ()};
 $('#tSubmit').onclick=()=>{const n=EX.ans.reduce((a,s)=>a+(s.size?1:0),0);if(n<EX.qs.length&&!confirm(`还有 ${EX.qs.length-n} 题未作答，确认交卷？`))return;submitExam(false)};
 function zoneOf(q){return{b:'Basics of AI',t:'AI Technologies',i:'Implementing AI'}[q.z||'t']}
 function submitExam(timeout){clearInterval(EX.iv);
@@ -708,6 +829,11 @@ function submitExam(timeout){clearInterval(EX.iv);
    <div style="font-size:14px;margin-top:4px">你的选择：<b>${userStr}</b>${q.t==='tf'?' ｜ 正确答案：<b>'+(q.ans[0]?'False':'True')+'</b>':''}</div>
    <div class="expl">${q.ex}</div></div>`}).join('');
  const hist=store.get('exam',[]);hist.push({s:score,b:label});store.set('exam',hist.slice(-20));
+ /* __PROBE__ 采集本次过程数据 */
+ try{
+   var _pr=window.__PROBE__?window.__PROBE__.finish(review,score,label,passLine):null;
+   if(_pr){window.__lastProbe=_pr;window.__renderProbe(_pr,'rProbe');}
+ }catch(e){}
  /* __EXPORT__ 保存本次逐题明细，供导出分析 */
  try{
    var zd={};review.forEach(function(r){var k=useTopic?topicOf(r.q):zoneOf(r.q);zd[k]=zd[k]||{right:0,total:0};zd[k].total++;if(r.ok)zd[k].right++;});
@@ -1027,6 +1153,7 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
   const L=COURSE2[(+$('#courseNav').value)||0];
   let h='<div class="card"><div class="row"><h2 style="margin:0">'+L.title+'</h2><span class="tag">'+L.tag+'</span></div>';
   h+='<h3>🧠 本讲详解</h3>'+L.read.map(p=>'<p style="margin:8px 0;padding:10px 14px;background:var(--accent-light);border-radius:10px;line-height:1.85;font-size:14.5px">'+p+'</p>').join('');
+ $('#rProbe').innerHTML='';
   if(L.keys&&L.keys.length)h+='<h3>🎯 必考要点</h3><ul style="margin:6px 0 0;padding-left:22px">'+L.keys.map(k=>'<li style="margin:4px 0;font-size:14px">'+k+'</li>').join('')+'</ul>';
   if(L.traps&&L.traps.length)h+='<h3>⚠️ 易错点</h3><ul style="margin:6px 0 0;padding-left:22px;color:var(--bad)">'+L.traps.map(k=>'<li style="margin:4px 0;font-size:14px">'+k+'</li>').join('')+'</ul>';
   h+='<div style="margin-top:14px"><button class="btn ghost sm" onclick="bankJump(\''+(L.bankQ||'')+'\')">🔎 练一练：本讲主题在题库中检索</button></div></div>';
@@ -1206,7 +1333,7 @@ document.addEventListener('keydown',function(e){
 });
 /* __DEEP_LINK__ v3 */
 (function(){
-  var TABS=['home','vocab','tips','practice','exam','read','csdn','course','checklist','wrong','sprint','tree'];
+  var TABS=['home','vocab','tips','practice','exam','read','csdn','course','checklist','wrong','sprint','tree','probe'];
   function showTab(t){
     if(TABS.indexOf(t)<0)t='home';
     $$('nav button').forEach(function(x){x.classList.toggle('on',x.dataset.t===t)});
@@ -1921,6 +2048,157 @@ document.addEventListener('keydown',function(e){
   });
   window.addEventListener('resize',function(){try{draw()}catch(e){}});
   try{build()}catch(e){}
+})();
+
+/* __PROBE__ 数据渲染（结果页摘要 + 独立分析页） */
+window.__renderProbe=function(rec,elId){
+  var el=typeof elId==='string'?document.getElementById(elId):elId;
+  if(!el||!rec)return;
+  var mm=Math.floor(rec.total/60),ss=rec.total%60;
+  var avg=Math.round(rec.total/Math.max(1,rec.n));
+  function pct(a,b){return b?Math.round(a/b*100):0}
+  function bar(p){var c=p>=80?'var(--ok)':(p>=60?'#d97706':'var(--bad)');
+    return '<div style="background:var(--line);border-radius:4px;height:7px;overflow:hidden;margin-top:4px">'+
+      '<div style="width:'+p+'%;height:100%;background:'+c+'"></div></div>'}
+  var H='';
+  // ① 总览
+  H+='<div class="card" style="padding:14px;margin-top:12px"><h3 style="margin:0 0 10px">⏱️ 本次考试总览</h3>'+
+    '<div class="row" style="gap:22px;flex-wrap:wrap">'+
+    '<div><div class="muted">总用时</div><div style="font-size:22px;font-weight:700">'+mm+'分'+String(ss).padStart(2,'0')+'秒</div></div>'+
+    '<div><div class="muted">平均每题</div><div style="font-size:22px;font-weight:700">'+avg+' 秒</div></div>'+
+    '<div><div class="muted">得分</div><div style="font-size:22px;font-weight:700;color:'+(rec.score>=rec.pass?'var(--ok)':'var(--bad)')+'">'+rec.score+'</div></div>'+
+    '<div><div class="muted">正确率</div><div style="font-size:22px;font-weight:700">'+pct(rec.right,rec.n)+'%</div></div>'+
+    '</div></div>';
+  // ② 配速诊断
+  var pace='';
+  if(rec.fast.length>rec.n*0.2)
+    pace='<b style="color:var(--bad)">⚠️ 过快题偏多</b>（'+rec.fast.length+' 题 <10 秒）—— 可能是读题不充分或靠猜。';
+  else if(rec.slow.length>rec.n*0.15)
+    pace='<b style="color:#d97706">⚠️ 超时题偏多</b>（'+rec.slow.length+' 题 >3 分钟）—— 英文长题干拖慢了节奏。';
+  else pace='<b style="color:var(--ok)">✅ 配速稳定</b>，没有明显的过快或卡壳题。';
+  if(rec.never.length)pace+=' <b style="color:var(--bad)">有 '+rec.never.length+' 题从未打开</b>（漏答）。';
+  H+='<div class="card" style="padding:14px;margin-top:10px"><h3 style="margin:0 0 8px">🏃 配速诊断</h3><p style="margin:0">'+pace+'</p>'+
+    '<div class="muted" style="margin-top:6px;font-size:12.5px">过快题号：'+(rec.fast.slice(0,14).map(function(i){return 'Q'+(i+1)}).join(' ')||'无')+
+    ' ｜ 超时题号：'+(rec.slow.slice(0,14).map(function(i){return 'Q'+(i+1)}).join(' ')||'无')+'</div></div>';
+  // ③ 主题 / 分区
+  function tbl(obj,title,useTopic){
+    var ks=Object.keys(obj);if(!ks.length)return '';
+    ks.sort(function(a,b){return (obj[a].right/obj[a].total)-(obj[b].right/obj[b].total)});
+    return '<div class="card" style="padding:14px;margin-top:10px"><h3 style="margin:0 0 10px">'+title+'</h3>'+
+      ks.map(function(k){
+        var o=obj[k],p=pct(o.right,o.total);
+        return '<div style="margin-bottom:10px"><div class="row"><b style="font-size:13.5px">'+k+'</b>'+
+          '<span style="flex:1"></span><span class="muted" style="font-size:12.5px">'+o.right+'/'+o.total+' · '+p+'%'+
+          ' · 均'+(o.total?Math.round(o.sec/o.total):0)+'秒</span></div>'+bar(p)+'</div>';
+      }).join('')+'</div>';
+  }
+  H+=tbl(rec.byZone,'📍 按考纲分区',false);
+  H+=tbl(rec.byTopic,'🎯 按 LLM-ACA 七主题',true);
+  // ④ 题型
+  var tn={single:'单选',multi:'多选',tf:'判断'};
+  var tk=Object.keys(rec.byType);
+  H+='<div class="card" style="padding:14px;margin-top:10px"><h3 style="margin:0 0 10px">📐 按题型</h3>'+
+    tk.map(function(k){var o=rec.byType[k],p=pct(o.right,o.total);
+      return '<div style="margin-bottom:10px"><div class="row"><b style="font-size:13.5px">'+(tn[k]||k)+'</b>'+
+        '<span style="flex:1"></span><span class="muted" style="font-size:12.5px">'+o.right+'/'+o.total+' · '+p+'%'+
+        ' · 均'+(o.total?Math.round(o.sec/o.total):0)+'秒</span></div>'+bar(p)+'</div>'}).join('')+'</div>';
+  // ⑤ 改答案行为
+  var c=rec.changes;
+  var verdict=c.total===0?'本次没有修改过答案。':
+    (c.toWrong>c.toRight?'<b style="color:var(--bad)">⚠️ 改答案反而更容易改错</b>（改错 '+c.toWrong+' 题 vs 改对 '+c.toRight+' 题）—— 建议相信第一直觉。':
+     '<b style="color:var(--ok)">✅ 改答案总体有益</b>（改对 '+c.toRight+' 题 vs 改错 '+c.toWrong+' 题）—— 继续复查。');
+  H+='<div class="card" style="padding:14px;margin-top:10px"><h3 style="margin:0 0 8px">✏️ 修改答案行为</h3>'+
+    '<p style="margin:0">共修改 <b>'+c.total+'</b> 次，涉及 '+c.toRight+c.toWrong+'+ 题。'+verdict+'</p></div>';
+  el.innerHTML=H;
+};
+
+/* 分析页渲染 */
+(function(){
+  function load(){try{return JSON.parse(localStorage.getItem(window.__PROBE__.KEY)||'[]')}catch(e){return[]}}
+  function pct(a,b){return b?Math.round(a/b*100):0}
+  function render(){
+    var box=document.getElementById('pbBox');if(!box)return;
+    var hist=load();
+    if(!hist.length){box.innerHTML='<p class="muted">还没有考试记录。完成一次「全真模考」后，这里会显示趋势分析。</p>';return}
+    var H='';
+    // 趋势图（SVG 折线）
+    var W=Math.max(560,hist.length*74),Hh=200,pad=34;
+    var pts=hist.map(function(r,i){
+      var x=pad+i*((W-pad*2)/Math.max(1,hist.length-1));
+      var y=Hh-pad-((r.score||0)/100)*(Hh-pad*2);
+      return {x:x,y:y,r:r};
+    });
+    var line=pts.map(function(p,i){return (i?'L':'M')+p.x.toFixed(1)+','+p.y.toFixed(1)}).join(' ');
+    var dots=pts.map(function(p){
+      var col=p.r.score>=80?'#16a34a':'#dc2626';
+      return '<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="5" fill="'+col+'"/>'+
+        '<text x="'+p.x.toFixed(1)+'" y="'+(p.y-11).toFixed(1)+'" font-size="11" text-anchor="middle" fill="'+col+'">'+p.r.score+'</text>';
+    }).join('');
+    var yl='';
+    [0,50,80,100].forEach(function(v){
+      var y=Hh-pad-(v/100)*(Hh-pad*2);
+      yl+='<line x1="'+pad+'" y1="'+y+'" x2="'+(W-pad)+'" y2="'+y+'" stroke="'+(v===80?'#16a34a':'var(--line)')+'" stroke-dasharray="'+(v===80?'4 3':'2 4')+'" stroke-opacity=".6"/>'+
+        '<text x="'+(pad-6)+'" y="'+(y+4)+'" font-size="10" text-anchor="end" fill="var(--muted)">'+v+'</text>';
+    });
+    H+='<div class="card" style="padding:14px"><h3 style="margin:0 0 10px">📈 历次模考趋势（共 '+hist.length+' 次，绿线=80 分通过线）</h3>'+
+      '<div style="overflow-x:auto"><svg width="'+W+'" height="'+Hh+'" style="min-width:100%">'+yl+
+      '<path d="'+line+'" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>'+dots+'</svg></div></div>';
+    // 最近一次
+    var last=hist[hist.length-1];
+    H+='<div class="card" style="padding:14px;margin-top:10px"><h3 style="margin:0 0 8px">🕐 最近一次（'+last.date+'）</h3>'+
+      '<div class="row" style="gap:20px;flex-wrap:wrap">'+
+      '<div><div class="muted">得分</div><b style="font-size:20px">'+last.score+'</b></div>'+
+      '<div><div class="muted">用时</div><b style="font-size:20px">'+Math.floor(last.total/60)+'分'+(last.total%60)+'秒</b></div>'+
+      '<div><div class="muted">正确率</div><b style="font-size:20px">'+pct(last.right,last.n)+'%</b></div>'+
+      '<div><div class="muted">平均每题</div><b style="font-size:20px">'+(last.avgSec||0)+'秒</b></div>'+
+      '</div></div>';
+    // 主题趋势（历次均值）
+    var agg={};
+    hist.forEach(function(r){
+      Object.keys(r.byZone||{}).forEach(function(k){
+        agg[k]=agg[k]||{right:0,total:0};
+        agg[k].right+=r.byZone[k].right;agg[k].total+=r.byZone[k].total;
+      });
+    });
+    var ks=Object.keys(agg);
+    if(ks.length){
+      ks.sort(function(a,b){return (agg[a].right/agg[a].total)-(agg[b].right/agg[b].total)});
+      H+='<div class="card" style="padding:14px;margin-top:10px"><h3 style="margin:0 0 10px">🎯 分区正确率排行（历次累计，弱项在前）</h3>'+
+        ks.map(function(k){var o=agg[k],p=pct(o.right,o.total);
+          var col=p>=80?'var(--ok)':(p>=60?'#d97706':'var(--bad)');
+          return '<div style="margin-bottom:10px"><div class="row"><b style="font-size:13.5px">'+k+'</b><span style="flex:1"></span>'+
+            '<span class="muted" style="font-size:12.5px">'+o.right+'/'+o.total+' · '+p+'%</span></div>'+
+            '<div style="background:var(--line);border-radius:4px;height:7px;overflow:hidden;margin-top:4px">'+
+            '<div style="width:'+p+'%;height:100%;background:'+col+'"></div></div></div>'}).join('')+'</div>';
+    }
+    // 配速趋势
+    H+='<div class="card" style="padding:14px;margin-top:10px"><h3 style="margin:0 0 10px">⏱️ 配速变化</h3><table><tr><th>日期</th><th>卷</th><th>得分</th><th>总用时</th><th>均每题</th></tr>'+
+      hist.slice(-12).reverse().map(function(r){
+        return '<tr><td style="font-size:12.5px">'+(r.date||'').replace(/^.*?(\d+\/\d+).*$/,'$1')+'</td><td>'+r.label+'</td>'+
+        '<td><b style="color:'+(r.score>=80?'var(--ok)':'var(--bad)')+'">'+r.score+'</b></td>'+
+        '<td>'+Math.floor(r.total/60)+'分'+(r.total%60)+'秒</td><td>'+(r.avgSec||0)+'秒</td></tr>'}).join('')+'</table></div>';
+    box.innerHTML=H;
+  }
+  var _st=window.showTab;
+  if(typeof _st==='function'){
+    window.showTab=function(t){var r=_st.apply(this,arguments);if(t==='probe')try{render()}catch(e){}return r};
+  }
+  document.querySelectorAll('[data-t="probe"]').forEach(function(b){
+    b.addEventListener('click',function(){try{render()}catch(e){}});
+  });
+  var ex=document.getElementById('pbExport');
+  if(ex)ex.onclick=function(){
+    var d=load();
+    var blob=new Blob([JSON.stringify(d,null,1)],{type:'application/json'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='llm-aca-probe-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  };
+  var cl=document.getElementById('pbClear');
+  if(cl)cl.onclick=function(){
+    if(!confirm('确定清空所有考试过程数据？此操作不可撤销。'))return;
+    try{localStorage.removeItem(window.__PROBE__.KEY)}catch(e){}
+    render();
+  };
 })();
 </script>
 </body>
