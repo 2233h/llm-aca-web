@@ -902,8 +902,49 @@ const COURSE2=[{"title":"Understanding Large Language Models (LLMs)","tag":"LLM�
    return{k:'h',lv:1,t:t};
   }
   if(/^(Part|Section|Module|Unit|Lesson)\s*\d+\s*[:：]/i.test(s))return{k:'h',lv:1,t:s};
-  // 编号小节 1.1 / 2.3.1
-  if(/^\d+(\.\d+)+[\.\s]/.test(s)&&short)return{k:'h',lv:2,t:s};
+  // 编号小节 1.1 / 2.3.1 —— PDF 常把标题与正文粘在一段，需切分
+  // 判据（按优先级）：
+  //   ① 句末标点 + 空格 + 大写 → 标题到此为止
+  //   ② 词重复（标题末词又在正文开头出现）→ 在重复处切开
+  //   ③ 冒号结尾 → 整体是标题
+  const numM=s.match(/^(\d+(?:\.\d+)*\.?)\s+(\S.*)$/);
+  if(numM){
+    const numPart=numM[1]; let body=numM[2].trim(); let head='',rest='';
+    const cut1=body.search(/[.!?]\s+[A-Z(]/);
+    if(cut1>0&&cut1<100){head=body.slice(0,cut1+1);rest=body.slice(cut1+1).trim()}
+    else {
+      const w=body.split(/\s+/); let ci=-1;
+      for(let i=2;i<Math.min(w.length,16);i++){
+        if(w[i]===w[i-2]||w[i]===w[i-1]){ci=i;break}
+      }
+      if(ci<0){
+        // ②b 大写词重复了前面出现过的词 → 那是正文起点（Tokenization…Tokenization / Wan…Wan）
+        for(let i=3;i<Math.min(w.length,16);i++){
+          if(!/^[A-Z]/.test(w[i]))continue;
+          const key=w[i].toLowerCase().replace(/[^a-z]/g,'');
+          if(key.length<3)continue;
+          for(let k=0;k<i;k++){
+            if(w[k].toLowerCase().replace(/[^a-z]/g,'')===key){ci=i;break}
+          }
+          if(ci>0)break;
+        }
+      }
+      if(ci<0){
+        // ②c 句首大写功能句（This/These/The/...）
+        for(let i=4;i<Math.min(w.length,16);i++){
+          if(/^(This|These|The|They|It|In|Users|Applications|Models|Ideal|Helps)\b/.test(w[i])){ci=i;break}
+        }
+      }
+      if(ci>0){head=w.slice(0,ci).join(' ');rest=w.slice(ci).join(' ')}
+      else if(body.length<=95){head=body}
+      else {head=w.slice(0,10).join(' ');rest=w.slice(10).join(' ')}
+    }
+    if(head&&!/[.!?]$/.test(head.replace(/!$/,''))){
+      const full=numPart+' '+head.trim();
+      if(rest&&rest.length>2)return{k:'h',lv:2,t:full,splitRest:rest};
+      return{k:'h',lv:2,t:full};
+    }
+  }
   if(/^\d+[\.、]\s*\S/.test(s)&&short&&!/[。.]$/.test(s))return{k:'h',lv:2,t:s};
   // 常见小节标签
   // 这些词若整段就是这个标签 → 标签；若后面紧跟内容 → 拆出标签 + 正文
